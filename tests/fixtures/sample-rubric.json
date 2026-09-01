@@ -1,0 +1,17 @@
+[
+  {
+    "id": "r1",
+    "description": "Explains light dependent reactions accurately",
+    "maxMarks": 4.0
+  },
+  {
+    "id": "r2",
+    "description": "Identifies thylakoid membrane location",
+    "maxMarks": 2.0
+  },
+  {
+    "id": "r3",
+    "description": "Describes ATP and NADPH formation",
+    "maxMarks": 4.0
+  }
+]

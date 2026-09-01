@@ -1,0 +1,166 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum SubmissionStatus {
+  UPLOADED
+  EXTRACTING
+  READY
+  GRADING
+  VALIDATING
+  ANNOTATING
+  COMPLETED
+  REVIEW_REQUIRED
+  FAILED
+}
+
+enum RubricStatus {
+  CORRECT
+  PARTIAL
+  INCORRECT
+  MISSING
+}
+
+enum AnnotationType {
+  HIGHLIGHT
+  BOX
+  COMMENT
+}
+
+model Paper {
+  id           String   @id @default(cuid())
+  name         String
+  questionFile String?
+  rubricFile   String?
+  createdAt    DateTime @default(now())
+
+  questions   Question[]
+  submissions Submission[]
+}
+
+model Question {
+  id       String @id @default(cuid())
+  paperId  String
+  number   Int
+  text     String
+  maxMarks Float
+
+  paper Paper @relation(fields: [paperId], references: [id], onDelete: Cascade)
+
+  rubricPoints RubricPoint[]
+
+  @@unique([paperId, number])
+}
+
+model RubricPoint {
+  id          String  @id @default(cuid())
+  questionId  String
+  description String
+  maxMarks    Float
+  expected    String?
+
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  results RubricResult[]
+}
+
+model Submission {
+  id          String   @id @default(cuid())
+  paperId     String
+  studentFile String
+  status      String   @default("UPLOADED")
+
+  totalMarks Float?
+  maxMarks   Float?
+
+  errorCode    String?
+  errorMessage String?
+  /// JSON: { remedy, attempts: [{ provider, model, code, message }] }
+  errorDetail  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  paper Paper @relation(fields: [paperId], references: [id])
+
+  gradingRuns GradingRun[]
+  annotations Annotation[]
+}
+
+model GradingRun {
+  id                   String    @id @default(cuid())
+  submissionId         String
+  model                String
+  /// Which provider in the chain answered: gemini | gemma | openai
+  provider             String?
+  /// True when the primary provider was unavailable and a later one graded instead.
+  fallbackUsed         Boolean   @default(false)
+  promptVersion        String
+  gradingEngineVersion String
+  status               String
+  attempt              Int       @default(1)
+
+  totalMarks Float?
+  maxMarks   Float?
+
+  createdAt   DateTime  @default(now())
+  completedAt DateTime?
+
+  submission Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  results RubricResult[]
+}
+
+model RubricResult {
+  id            String @id @default(cuid())
+  gradingRunId  String
+  rubricPointId String
+  status        String
+  marksAwarded  Float
+
+  evidenceText String?
+  evidencePage Int?
+  evidenceBBox String?
+
+  feedback   String?
+  correction String?
+
+  confidence  Float
+  humanReview Boolean @default(false)
+
+  gradingRun GradingRun @relation(fields: [gradingRunId], references: [id], onDelete: Cascade)
+
+  rubricPoint RubricPoint @relation(fields: [rubricPointId], references: [id])
+
+  annotations Annotation[]
+
+  @@unique([gradingRunId, rubricPointId])
+}
+
+model Annotation {
+  id             String  @id @default(cuid())
+  submissionId   String
+  rubricResultId String?
+
+  page   Int
+  x      Float
+  y      Float
+  width  Float
+  height Float
+
+  type       String
+  comment    String?
+  correction String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  submission Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  rubricResult RubricResult? @relation(fields: [rubricResultId], references: [id], onDelete: SetNull)
+}
