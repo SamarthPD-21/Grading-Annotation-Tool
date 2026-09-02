@@ -26,19 +26,24 @@ export interface AnnotationOverlayProps extends AnnotationCoords {
    */
   scale: number;
   isSelected?: boolean;
+  /** Another annotation is selected — fade back so the chosen one stands out. */
+  isDimmed?: boolean;
   onSelect?: () => void;
   onUpdate?: (id: string, newCoords: AnnotationCoords) => void;
   onDelete?: (id: string) => void;
 }
 
+// Rubric points routinely cite the same sentences, so several boxes stack on one line.
+// Fills are kept light — at heavier alpha the overlaps compound into an opaque slab and the
+// student's words underneath stop being readable.
 const STATUS_STYLES: Record<string, { box: string; dot: string }> = {
-  CORRECT: { box: 'border-success bg-success/20', dot: 'bg-success' },
-  PARTIAL: { box: 'border-warning bg-warning/20', dot: 'bg-warning' },
-  INCORRECT: { box: 'border-destructive bg-destructive/15', dot: 'bg-destructive' },
-  MISSING: { box: 'border-muted-foreground bg-muted-foreground/15', dot: 'bg-muted-foreground' },
+  CORRECT: { box: 'border-success/70 bg-success/[0.08]', dot: 'bg-success' },
+  PARTIAL: { box: 'border-warning/70 bg-warning/[0.08]', dot: 'bg-warning' },
+  INCORRECT: { box: 'border-destructive/70 bg-destructive/[0.08]', dot: 'bg-destructive' },
+  MISSING: { box: 'border-muted-foreground/70 bg-muted-foreground/[0.08]', dot: 'bg-muted-foreground' },
 };
 
-const FALLBACK_STYLE = { box: 'border-primary bg-primary/15', dot: 'bg-primary' };
+const FALLBACK_STYLE = { box: 'border-primary/70 bg-primary/[0.08]', dot: 'bg-primary' };
 
 export function AnnotationOverlay({
   id,
@@ -53,6 +58,7 @@ export function AnnotationOverlay({
   correction,
   scale,
   isSelected,
+  isDimmed,
   onSelect,
   onUpdate,
   onDelete,
@@ -132,7 +138,7 @@ export function AnnotationOverlay({
       onMouseDown={handleMouseDown}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
-      className={`absolute rounded-[3px] border-2 ${style.box} ${
+      className={`absolute rounded-[3px] border ${style.box} ${
         type === 'HIGHLIGHT' ? '' : 'border-dashed'
       } ${isDragging ? 'cursor-grabbing' : 'cursor-grab'} ${
         isSelected
@@ -140,7 +146,9 @@ export function AnnotationOverlay({
           : isHovered
           ? 'z-20 brightness-125'
           : 'z-10'
-      } ${isDragging ? '' : 'transition-all duration-150'}`}
+      } ${isDimmed && !isHovered ? 'opacity-25' : 'opacity-100'} ${
+        isDragging ? '' : 'transition-all duration-150'
+      }`}
       style={{
         left: `${coords.x * scale}px`,
         top: `${coords.y * scale}px`,

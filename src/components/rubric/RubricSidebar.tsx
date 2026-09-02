@@ -77,7 +77,7 @@ export function RubricSidebar({
         </p>
       )}
 
-      <div className="space-y-4 overflow-y-auto max-h-[calc(100vh-300px)] pr-1">
+      <div className="space-y-4 overflow-y-auto max-h-[calc(100vh-13rem)] pr-1">
         {questions.map((q, qi) => {
           const { earned, max } = totals[qi];
           const pct = max > 0 ? (earned / max) * 100 : 0;

@@ -1,6 +1,11 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import type {
+  PDFDocumentLoadingTask,
+  PDFDocumentProxy,
+  RenderTask,
+} from 'pdfjs-dist';
 
 export interface PdfPageCanvasProps {
   fileUrl: string;
@@ -14,20 +19,6 @@ export interface PdfPageCanvasProps {
   onRendered: (info: { scale: number; width: number; height: number; pageCount: number }) => void;
   onError: (message: string) => void;
 }
-
-type PdfDocument = {
-  numPages: number;
-  getPage: (n: number) => Promise<PdfPage>;
-  destroy: () => Promise<void>;
-};
-
-type PdfPage = {
-  getViewport: (opts: { scale: number }) => { width: number; height: number };
-  render: (opts: {
-    canvasContext: CanvasRenderingContext2D;
-    viewport: { width: number; height: number };
-  }) => { promise: Promise<void>; cancel: () => void };
-};
 
 let pdfjsPromise: Promise<typeof import('pdfjs-dist')> | null = null;
 
@@ -59,7 +50,10 @@ export function PdfPageCanvas({
   onError,
 }: PdfPageCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const docRef = useRef<PdfDocument | null>(null);
+  const docRef = useRef<PDFDocumentProxy | null>(null);
+  // destroy() lives on the loading task, not the document proxy (which only has cleanup()).
+  // Tearing down the task is what releases the worker.
+  const loadingTaskRef = useRef<PDFDocumentLoadingTask | null>(null);
   const [isRendering, setIsRendering] = useState(true);
 
   // Kept in refs so re-renders caused by the callbacks themselves do not reload the document.
@@ -76,9 +70,11 @@ export function PdfPageCanvas({
     (async () => {
       try {
         const pdfjs = await loadPdfjs();
-        const doc = (await pdfjs.getDocument({ url: fileUrl }).promise) as unknown as PdfDocument;
+        const task = pdfjs.getDocument({ url: fileUrl });
+        loadingTaskRef.current = task;
+        const doc = await task.promise;
         if (cancelled) {
-          await doc.destroy();
+          await task.destroy();
           return;
         }
         docRef.current = doc;
@@ -91,7 +87,8 @@ export function PdfPageCanvas({
 
     return () => {
       cancelled = true;
-      docRef.current?.destroy().catch(() => {});
+      loadingTaskRef.current?.destroy().catch(() => {});
+      loadingTaskRef.current = null;
       docRef.current = null;
     };
   }, [fileUrl]);
@@ -100,7 +97,7 @@ export function PdfPageCanvas({
     if (!containerWidth) return;
 
     let cancelled = false;
-    let task: { promise: Promise<void>; cancel: () => void } | null = null;
+    let renderTask: RenderTask | null = null;
 
     (async () => {
       // The document load above may still be in flight on the first pass.
@@ -132,8 +129,8 @@ export function PdfPageCanvas({
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         ctx.clearRect(0, 0, viewport.width, viewport.height);
 
-        task = page.render({ canvasContext: ctx, viewport });
-        await task.promise;
+        renderTask = page.render({ canvas, canvasContext: ctx, viewport });
+        await renderTask.promise;
         if (cancelled) return;
 
         onRenderedRef.current({
@@ -155,7 +152,7 @@ export function PdfPageCanvas({
 
     return () => {
       cancelled = true;
-      task?.cancel();
+      renderTask?.cancel();
     };
   }, [pageNumber, containerWidth, fileUrl]);
 

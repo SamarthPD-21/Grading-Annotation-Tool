@@ -365,7 +365,14 @@ export function GradingPanel({ submission: initialSubmission }: GradingPanelProp
       {/* Main Split Panel */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
         {/* Left: Rubric Sidebar */}
-        <div className={`lg:col-span-4 rounded-xl border border-border bg-card p-4 sm:p-5 ${mobileTab === 'rubric' ? 'block' : 'hidden lg:block'}`}>
+        {/* self-start stops the grid stretching this column to the PDF's height, which left
+            a tall empty panel under the last rubric point. Sticky keeps the marks in view
+            while the page itself is scrolled. */}
+        <div
+          className={`lg:col-span-4 lg:sticky lg:top-20 lg:self-start rounded-xl border border-border bg-card p-4 sm:p-5 ${
+            mobileTab === 'rubric' ? 'block' : 'hidden lg:block'
+          }`}
+        >
           <RubricSidebar
             questions={submission.paper?.questions || []}
             results={latestRun?.results || []}

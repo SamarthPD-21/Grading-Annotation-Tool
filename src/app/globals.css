@@ -213,10 +213,12 @@ body {
 
 /* Glass effect utility */
 .glass {
-  background: oklch(1 0 0 / 0.6);
+  background: oklch(1 0 0 / 0.92);
   backdrop-filter: blur(16px) saturate(1.2);
   -webkit-backdrop-filter: blur(16px) saturate(1.2);
 }
 .dark .glass {
-  background: oklch(0.12 0.015 270 / 0.75);
+  /* Near-opaque: at 0.75 the page scrolled underneath stayed fully readable through the
+     header, which reads as a layout bug rather than a glass effect. */
+  background: oklch(0.12 0.015 270 / 0.94);
 }
