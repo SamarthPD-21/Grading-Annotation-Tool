@@ -1,5 +1,10 @@
 import { prisma } from '@/lib/db/prisma';
-import { generateAnnotatedPdf, MarkSummary } from '@/lib/pdf/annotate';
+import {
+  generateAnnotatedPdf,
+  MarkSummary,
+  MarkSummaryPoint,
+  MarkSummaryQuestion,
+} from '@/lib/pdf/annotate';
 import { sanitizeString } from '@/lib/security/sanitize';
 
 export async function createAnnotation(data: {
@@ -96,7 +101,11 @@ export async function exportAnnotatedPdfService(submissionId: string): Promise<s
     where: { id: submissionId },
     include: {
       annotations: true,
-      paper: { include: { questions: { include: { rubricPoints: true }, orderBy: { number: 'asc' } } } },
+      paper: {
+        include: {
+          questions: { include: { rubricPoints: true }, orderBy: { number: 'asc' } },
+        },
+      },
       gradingRuns: {
         orderBy: { attempt: 'desc' },
         take: 1,
@@ -111,16 +120,26 @@ export async function exportAnnotatedPdfService(submissionId: string): Promise<s
 
   const run = submission.gradingRuns[0];
 
+  // Exporting an ungraded paper produces a bare copy of the student's own PDF, which reads
+  // as though grading ran and found nothing. Refuse instead, and say why.
+  if (!run || run.results.length === 0) {
+    throw new Error(
+      'NOT_GRADED: This submission has no grading results yet, so there is nothing to ' +
+        'annotate. Run grading first, then export.'
+    );
+  }
+
+  const resultByPointId = new Map(run.results.map((r) => [r.rubricPointId, r]));
+  const resultById = new Map(run.results.map((r) => [r.id, r]));
+
   // Stable "Q1.2" labels, matching the markers drawn on the on-screen overlay.
   const labelByResultId = new Map<string, string>();
   for (const question of submission.paper.questions) {
     question.rubricPoints.forEach((rp, index) => {
-      const result = run?.results.find((r) => r.rubricPointId === rp.id);
+      const result = resultByPointId.get(rp.id);
       if (result) labelByResultId.set(result.id, `${question.number}.${index + 1}`);
     });
   }
-
-  const resultById = new Map((run?.results ?? []).map((r) => [r.id, r]));
 
   const annotations = submission.annotations.map((a) => {
     const result = a.rubricResultId ? resultById.get(a.rubricResultId) : undefined;
@@ -138,26 +157,44 @@ export async function exportAnnotatedPdfService(submissionId: string): Promise<s
     };
   });
 
-  // The exported copy is the teacher's record, so it carries the marks, not just the boxes.
-  const summary: MarkSummary | null = run
-    ? {
-        paperName: submission.paper.name,
-        submissionId,
-        totalMarks: run.totalMarks ?? 0,
-        maxMarks: run.maxMarks ?? 0,
-        model: run.provider ? `${run.provider}/${run.model}` : run.model,
-        gradedAt: run.completedAt,
-        needsReview: run.results.some((r) => r.humanReview),
-        rows: run.results.map((r) => ({
-          label: labelByResultId.get(r.id) ?? '',
-          description: r.rubricPoint.description,
-          status: r.status,
-          marksAwarded: r.marksAwarded,
-          maxMarks: r.rubricPoint.maxMarks,
-          feedback: r.correction ? `${r.feedback ?? ''} Correction: ${r.correction}`.trim() : r.feedback,
-        })),
-      }
-    : null;
+  // Grouped by question so the report reads like a marked script rather than a flat list.
+  const questions: MarkSummaryQuestion[] = submission.paper.questions.map((q) => {
+    const points: MarkSummaryPoint[] = q.rubricPoints.map((rp, index) => {
+      const r = resultByPointId.get(rp.id);
+      return {
+        label: `${q.number}.${index + 1}`,
+        description: rp.description,
+        expected: rp.expected,
+        status: r?.status ?? 'MISSING',
+        marksAwarded: r?.marksAwarded ?? 0,
+        maxMarks: rp.maxMarks,
+        evidence: r?.evidenceText ?? null,
+        feedback: r?.feedback ?? null,
+        correction: r?.correction ?? null,
+        confidence: r?.confidence ?? null,
+        humanReview: r?.humanReview ?? false,
+      };
+    });
+
+    return {
+      number: q.number,
+      text: q.text,
+      earned: points.reduce((sum, p) => sum + p.marksAwarded, 0),
+      max: points.reduce((sum, p) => sum + p.maxMarks, 0),
+      points,
+    };
+  });
+
+  const summary: MarkSummary = {
+    paperName: submission.paper.name,
+    submissionId,
+    totalMarks: run.totalMarks ?? 0,
+    maxMarks: run.maxMarks ?? 0,
+    model: run.provider ? `${run.provider}/${run.model}` : run.model,
+    gradedAt: run.completedAt,
+    needsReview: run.results.some((r) => r.humanReview),
+    questions,
+  };
 
   return generateAnnotatedPdf(submission.studentFile, submissionId, annotations, summary);
 }

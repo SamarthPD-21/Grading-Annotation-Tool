@@ -12,6 +12,7 @@ interface ExtractedPage {
 }
 import { RubricSidebar } from '../rubric/RubricSidebar';
 import { AnnotationOverlay } from '../pdf-viewer/AnnotationOverlay';
+import { PdfPageCanvas } from '../pdf-viewer/PdfPageCanvas';
 import { StatusProgress } from './StatusProgress';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
@@ -116,6 +117,9 @@ export function GradingPanel({ submission: initialSubmission }: GradingPanelProp
   const [mobileTab, setMobileTab] = useState<'rubric' | 'canvas'>('canvas');
   const [isExporting, setIsExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [pdfError, setPdfError] = useState<string | null>(null);
+  // Rendered page geometry, reported by the canvas once pdf.js has drawn the page.
+  const [pageRender, setPageRender] = useState<{ scale: number; pageCount: number } | null>(null);
   // Rendered width of the page sheet, measured so PDF-point coords can be scaled to px.
   const pageRef = useRef<HTMLDivElement | null>(null);
   const [renderedWidth, setRenderedWidth] = useState(0);
@@ -224,9 +228,20 @@ export function GradingPanel({ submission: initialSubmission }: GradingPanelProp
   const activePage = extractedPages.find((p) => p.pageNumber === currentPage);
   const activePageText = activePage?.text || '';
 
-  // Overlay coords are PDF points; the sheet is rendered at whatever width the layout gives
-  // it. Without this ratio the boxes are placed at raw point values and land nowhere useful.
-  const scale = renderedWidth && activePage?.width ? renderedWidth / activePage.width : 1;
+  // The canvas reports the true renderedWidth / pageWidthInPoints ratio once it has drawn
+  // the page. Anything derived from the text layout would be a guess.
+  const scale = pageRender?.scale ?? 1;
+  const canRenderPdf = !missingFile && !pdfError;
+  const pageCount = pageRender?.pageCount ?? extractedPages.length ?? 1;
+
+  const handlePageRendered = useCallback(
+    (info: { scale: number; pageCount: number }) => {
+      setPageRender((prev) =>
+        prev && prev.scale === info.scale && prev.pageCount === info.pageCount ? prev : info
+      );
+    },
+    []
+  );
 
   useEffect(() => {
     const el = pageRef.current;
@@ -356,6 +371,7 @@ export function GradingPanel({ submission: initialSubmission }: GradingPanelProp
             results={latestRun?.results || []}
             selectedRubricPointId={selectedRubricId}
             onSelectRubricPoint={selectRubricPoint}
+            isGraded={(latestRun?.results?.length ?? 0) > 0}
           />
         </div>
 
@@ -378,11 +394,11 @@ export function GradingPanel({ submission: initialSubmission }: GradingPanelProp
                   ◀
                 </button>
                 <span className="font-mono text-foreground font-medium tabular-nums">
-                  Page {currentPage} of {Math.max(extractedPages.length, 1)}
+                  Page {currentPage} of {pageCount}
                 </span>
                 <button
-                  disabled={currentPage >= extractedPages.length}
-                  onClick={() => setCurrentPage((p) => Math.min(extractedPages.length, p + 1))}
+                  disabled={currentPage >= pageCount}
+                  onClick={() => setCurrentPage((p) => Math.min(pageCount, p + 1))}
                   className="px-1.5 rounded hover:bg-accent disabled:opacity-30 disabled:hover:bg-transparent"
                   aria-label="Next page"
                 >
@@ -403,95 +419,104 @@ export function GradingPanel({ submission: initialSubmission }: GradingPanelProp
               </span>
             </div>
 
-            {/* The page sheet. Overlays are absolutely positioned against this element, so
-                it is the box whose width defines the PDF-point → px scale. */}
-            <div
-              ref={pageRef}
-              className="w-full max-w-2xl mx-auto bg-card rounded-lg shadow-lg p-5 sm:p-6 min-h-[500px] relative border border-border"
-              onMouseDown={() => setSelectedRubricId(null)}
-            >
-              <div className="border-b border-border pb-2 mb-4 flex justify-between items-center text-[10px] text-muted-foreground font-mono">
+            {/* The rendered PDF page. Overlays are positioned against this element, so its
+                width is what defines the PDF-point -> px scale. */}
+            <div className="w-full max-w-2xl mx-auto">
+              <div className="flex justify-between items-center text-[10px] text-muted-foreground font-mono mb-1.5 px-0.5">
                 <span>Page {currentPage}</span>
                 <span>#{submission.id.slice(-8)}</span>
               </div>
 
-              {isLoadingText ? (
-                <div className="space-y-3 py-4" aria-label="Extracting document text">
-                  {[...Array(8)].map((_, i) => (
-                    <div
-                      key={i}
-                      className="h-3 rounded animate-shimmer"
-                      style={{ width: `${[95, 88, 92, 70, 96, 84, 90, 55][i]}%` }}
-                    />
-                  ))}
-                </div>
-              ) : (
-                <div className="space-y-4 text-xs sm:text-sm text-foreground leading-relaxed">
-                  {/* Questions belong to the paper, not to a page, so show them all on
-                      page 1 rather than only ever the first one. */}
-                  {currentPage === 1 &&
-                    submission.paper?.questions?.map((q) => (
-                      <div
-                        key={q.id}
-                        className="font-semibold p-2.5 rounded bg-muted/40 border border-border/50 text-foreground"
-                      >
-                        Q{q.number}: {q.text}
-                      </div>
-                    ))}
-
-                  {activePageText ? (
-                    <div className="whitespace-pre-wrap font-sans text-muted-foreground leading-relaxed">
-                      {activePageText}
-                    </div>
-                  ) : (
-                    <div className="flex flex-col items-center justify-center py-16 text-center gap-2">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground/50"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>
-                      <p className="text-xs font-semibold text-foreground">
-                        {missingFile ? 'Original PDF is not on disk' : 'No text on this page'}
-                      </p>
-                      <p className="text-[11px] text-muted-foreground max-w-xs">
-                        {missingFile
-                          ? 'The upload could not be found, so its text and annotation positions cannot be shown.'
-                          : 'This page has no extractable text — it may be a scan or an image.'}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Draggable evidence overlays for this page */}
-              {annotationsOnPage.map((annot) => {
-                const result = annot.rubricResultId ? resultById.get(annot.rubricResultId) : undefined;
-                return (
-                  <AnnotationOverlay
-                    key={annot.id}
-                    id={annot.id}
-                    rubricResultId={annot.rubricResultId}
-                    x={annot.x}
-                    y={annot.y}
-                    width={annot.width}
-                    height={annot.height}
-                    type={annot.type}
-                    status={result?.status}
-                    label={result ? labelByResultId.get(result.id) : null}
-                    comment={annot.comment}
-                    correction={annot.correction}
-                    scale={scale}
-                    isSelected={selectedResult ? annot.rubricResultId === selectedResult.id : false}
-                    onSelect={() => {
-                      if (result) setSelectedRubricId(result.rubricPointId);
-                    }}
-                    onUpdate={(id, newCoords) => {
-                      setAnnotations((prev) =>
-                        prev.map((a) => (a.id === id ? { ...a, ...newCoords } : a))
-                      );
-                    }}
-                    onDelete={(id) => {
-                      setAnnotations((prev) => prev.filter((a) => a.id !== id));
-                    }}
+              <div
+                ref={pageRef}
+                className="relative w-full bg-card rounded-lg shadow-lg border border-border overflow-hidden"
+                onMouseDown={() => setSelectedRubricId(null)}
+              >
+                {canRenderPdf ? (
+                  <PdfPageCanvas
+                    fileUrl={`${API_BASE}/api/submissions/${submission.id}/file`}
+                    pageNumber={currentPage}
+                    containerWidth={renderedWidth}
+                    onRendered={handlePageRendered}
+                    onError={setPdfError}
                   />
-                );
-              })}
+                ) : (
+                  /* Text fallback. Overlays are deliberately NOT drawn here: their
+                     coordinates describe the PDF page, and on re-flowed text they would
+                     point at whatever happens to sit at those offsets. */
+                  <div className="p-5 sm:p-6 min-h-[420px] text-xs sm:text-sm leading-relaxed">
+                    {isLoadingText ? (
+                      <div className="space-y-3 py-4" aria-label="Loading document">
+                        {[...Array(8)].map((_, i) => (
+                          <div
+                            key={i}
+                            className="h-3 rounded animate-shimmer"
+                            style={{ width: `${[95, 88, 92, 70, 96, 84, 90, 55][i]}%` }}
+                          />
+                        ))}
+                      </div>
+                    ) : activePageText ? (
+                      <>
+                        <p className="mb-3 text-[11px] text-warning">
+                          Showing extracted text because the PDF could not be displayed
+                          {pdfError ? ` (${pdfError})` : ''}. Evidence highlights are hidden
+                          here — open the exported PDF to see them in place.
+                        </p>
+                        <div className="whitespace-pre-wrap font-sans text-muted-foreground">
+                          {activePageText}
+                        </div>
+                      </>
+                    ) : (
+                      <div className="flex flex-col items-center justify-center py-16 text-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground/50"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>
+                        <p className="text-xs font-semibold text-foreground">
+                          {missingFile ? 'Original PDF is not on disk' : 'Nothing to display'}
+                        </p>
+                        <p className="text-[11px] text-muted-foreground max-w-xs">
+                          {missingFile
+                            ? 'The upload could not be found, so the answer and its highlights cannot be shown.'
+                            : 'This page has no extractable text — it may be a scan or an image.'}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Evidence overlays, only over the real page where the coordinates hold. */}
+                {canRenderPdf &&
+                  annotationsOnPage.map((annot) => {
+                  const result = annot.rubricResultId ? resultById.get(annot.rubricResultId) : undefined;
+                  return (
+                    <AnnotationOverlay
+                      key={annot.id}
+                      id={annot.id}
+                      rubricResultId={annot.rubricResultId}
+                      x={annot.x}
+                      y={annot.y}
+                      width={annot.width}
+                      height={annot.height}
+                      type={annot.type}
+                      status={result?.status}
+                      label={result ? labelByResultId.get(result.id) : null}
+                      comment={annot.comment}
+                      correction={annot.correction}
+                      scale={scale}
+                      isSelected={selectedResult ? annot.rubricResultId === selectedResult.id : false}
+                      onSelect={() => {
+                        if (result) setSelectedRubricId(result.rubricPointId);
+                      }}
+                      onUpdate={(id, newCoords) => {
+                        setAnnotations((prev) =>
+                          prev.map((a) => (a.id === id ? { ...a, ...newCoords } : a))
+                        );
+                      }}
+                      onDelete={(id) => {
+                        setAnnotations((prev) => prev.filter((a) => a.id !== id));
+                      }}
+                      />
+                    );
+                  })}
+              </div>
             </div>
           </div>
 

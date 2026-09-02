@@ -138,22 +138,45 @@ export function classifyLLMError(error: unknown, ctx: ErrorContext = {}): LLMErr
   return make('LLM_UNKNOWN');
 }
 
-/** Sentinel-prefixed errors thrown by the validation firewall, e.g. `INVALID_MARKS: ...`. */
-const SENTINEL_PATTERN = /^([A-Z][A-Z0-9_]{4,}): ([\s\S]*)$/;
+/**
+ * Provider errors can be enormous — Google returns a full JSON quota document — and the raw
+ * text was rendered straight into the failure banner, spilling across the page. Keep the
+ * human sentence and drop the machine payload.
+ */
+export function condenseProviderMessage(message: string, limit = 180): string {
+  let text = message.trim();
+
+  // Pull the human-readable sentence out of a JSON error envelope when there is one.
+  const embedded = /"message"\s*:\s*"((?:[^"\\]|\\.)*)"/.exec(text);
+  if (embedded) {
+    try {
+      text = JSON.parse(`"${embedded[1]}"`);
+    } catch {
+      text = embedded[1];
+    }
+  }
+
+  // Anything still JSON-shaped is a payload, not a sentence.
+  text = text.replace(/[[{][\s\S]*$/, '').trim();
+  text = text.replace(/\s+/g, ' ');
+
+  if (!text) text = message.slice(0, limit);
+  return text.length > limit ? text.slice(0, limit - 1).trimEnd() + '…' : text;
+}
 
 /** One actionable next step per failure kind, rather than a pasted vendor string. */
 export function remedyFor(code: LLMErrorCode): string | null {
   switch (code) {
     case 'LLM_QUOTA_EXCEEDED':
-      return 'Every configured provider is out of quota. Add credits, or add a provider with free quota to LLM_PROVIDER_CHAIN.';
+      return 'Every configured provider is out of quota. Add credits, or add a provider with free quota (e.g. GEMINI_API_KEY, GROQ_API_KEY, OPENROUTER_API_KEY) to LLM_PROVIDER_CHAIN.';
     case 'LLM_AUTH_ERROR':
-      return 'An API key was rejected. Check GEMINI_API_KEY / OPENAI_API_KEY in .env, then restart the server so it picks the new value up.';
+      return 'An API key was rejected. Check GEMINI_API_KEY / GROQ_API_KEY / OPENROUTER_API_KEY / OPENAI_API_KEY in .env, then restart the server.';
     case 'LLM_UNAVAILABLE':
       return 'Could not reach the provider. Check network access and any proxy or firewall between this server and the provider.';
     case 'LLM_MODEL_UNAVAILABLE':
-      return 'The configured model id was rejected. Verify it with `npm run smoke:llm -- --list`.';
+      return 'The configured model id was rejected. Verify it in your LLM_PROVIDER_CHAIN.';
     case 'LLM_NOT_CONFIGURED':
-      return 'Set GEMINI_API_KEY (it covers both Gemini and Gemma) or OPENAI_API_KEY in .env.';
+      return 'Set GEMINI_API_KEY (covers Gemini & Gemma), GROQ_API_KEY, OPENROUTER_API_KEY, MISTRAL_API_KEY, or OPENAI_API_KEY in .env.';
     case 'LLM_TIMEOUT':
       return 'The provider did not respond in time. Re-grading usually clears this.';
     case 'LLM_REFUSAL':
@@ -165,7 +188,7 @@ export function remedyFor(code: LLMErrorCode): string | null {
   }
 }
 
-function humanMessage(error: LLMError): string {
+export function humanMessage(error: LLMError): string {
   if (error.attempts.length === 0) {
     const where = error.provider ? ` (${error.provider}/${error.model})` : '';
     return `${error.message}${where}`;
@@ -182,10 +205,6 @@ export interface SubmissionError {
   errorDetail: string | null;
 }
 
-/**
- * Turns an arbitrary pipeline failure into the fields persisted on the submission, so
- * operators see something actionable instead of one opaque bucket.
- */
 export function toSubmissionError(error: unknown): SubmissionError {
   if (error instanceof LLMError) {
     const detail = {
@@ -209,7 +228,7 @@ export function toSubmissionError(error: unknown): SubmissionError {
   }
 
   const errorMessage = error instanceof Error ? error.message : String(error);
-  const sentinel = SENTINEL_PATTERN.exec(errorMessage);
+  const sentinel = /^([A-Z][A-Z0-9_]{4,}): ([\s\S]*)$/.exec(errorMessage);
   if (sentinel) {
     return { errorCode: sentinel[1], errorMessage: sentinel[2], errorDetail: null };
   }

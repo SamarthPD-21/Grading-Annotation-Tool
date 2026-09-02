@@ -148,12 +148,12 @@ export function AnnotationOverlay({
         height: `${Math.max(coords.height * scale, 8)}px`,
       }}
     >
-      {/* Marker sits outside the box so it never covers the student's words. */}
-      {label && (
+      {/* Marker sits outside the box so it never covers the student's words, and appears on
+          demand only: rubric points routinely cite overlapping sentences, so always-on
+          markers stack into an unreadable pile at the same coordinates. */}
+      {label && (isSelected || isHovered) && (
         <span
-          className={`absolute -left-1.5 -top-2 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[9px] font-bold text-white shadow-sm ${style.dot} ${
-            isSelected || isHovered ? 'opacity-100' : 'opacity-70'
-          }`}
+          className={`absolute -left-1.5 -top-2 z-10 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[9px] font-bold text-white shadow-sm ${style.dot}`}
         >
           {label}
         </span>

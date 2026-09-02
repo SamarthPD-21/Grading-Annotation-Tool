@@ -31,7 +31,10 @@ export async function extractTextWithPositionsFromBuffer(
         pageString += item.str + ' ';
 
         const [, , , scaleY, tx, ty] = item.transform;
-        const viewY = viewport.height - ty; // Top-left origin conversion
+        const height = Math.max(10, Math.round(item.height || Math.abs(scaleY) || 14));
+        // `ty` is the text BASELINE. Converting it straight to a top-left origin put the
+        // box top on the baseline, so every highlight hung a full line below its words.
+        const viewY = viewport.height - ty - height;
 
         pageItems.push({
           text: item.str,
@@ -39,7 +42,7 @@ export async function extractTextWithPositionsFromBuffer(
           x: Math.max(0, Math.round(tx)),
           y: Math.max(0, Math.round(viewY)),
           width: Math.max(10, Math.round(item.width || 50)),
-          height: Math.max(10, Math.round(item.height || Math.abs(scaleY) || 14)),
+          height,
         });
       }
 

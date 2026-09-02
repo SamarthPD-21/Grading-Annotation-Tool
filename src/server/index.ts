@@ -183,6 +183,31 @@ app.get('/api/submissions/:id/text', async (req, res) => {
   }
 });
 
+// GET /api/submissions/:id/file — Stream the ORIGINAL student PDF for the viewer.
+// Read-only: the annotated copy lives under uploads/generated and is served by /export.
+app.get('/api/submissions/:id/file', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const submission = await getSubmissionWithDetails(id);
+    if (!submission) {
+      res.status(404).json({ error: `Submission ${id} not found` });
+      return;
+    }
+
+    if (!fs.existsSync(submission.studentFile)) {
+      res.status(404).json({ error: 'Original PDF is no longer on disk', errorCode: 'FILE_MISSING' });
+      return;
+    }
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="submission-${id}.pdf"`);
+    fs.createReadStream(submission.studentFile).pipe(res);
+  } catch (err: any) {
+    console.error(`[API /api/submissions/${req.params.id}/file] Error:`, err);
+    res.status(500).json({ error: err.message || 'Failed to read submission PDF' });
+  }
+});
+
 // POST /api/submissions/:id/grade — Execute grading
 app.post('/api/submissions/:id/grade', async (req, res) => {
   try {
@@ -212,7 +237,12 @@ app.get('/api/submissions/:id/export', async (req, res) => {
     fs.createReadStream(exportedPath).pipe(res);
   } catch (err: any) {
     console.error(`[API /api/submissions/${req.params.id}/export] Error:`, err);
-    res.status(500).json({ error: err.message || 'Failed to export annotated PDF' });
+    const message = err.message || 'Failed to export annotated PDF';
+    if (message.startsWith('NOT_GRADED:')) {
+      res.status(409).json({ error: message.replace('NOT_GRADED: ', ''), errorCode: 'NOT_GRADED' });
+      return;
+    }
+    res.status(500).json({ error: message });
   }
 });
 

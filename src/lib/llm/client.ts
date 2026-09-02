@@ -10,7 +10,7 @@ import {
   getClientFor,
   getProviderChain,
 } from './providers';
-import { AttemptRecord, LLMError, classifyLLMError } from './errors';
+import { AttemptRecord, LLMError, classifyLLMError, condenseProviderMessage } from './errors';
 
 export interface RubricPromptItem {
   id: string;
@@ -45,40 +45,147 @@ interface Task<T> {
   schemaName: string;
 }
 
-/** Pulls a JSON object out of a free-text completion, tolerating markdown fences. */
+/**
+ * Walks `str` from `openPos` (which must be a `{`) tracking brace depth and
+ * respecting JSON string boundaries.  Returns the index of the matching `}`,
+ * or -1 if the object is never closed.
+ *
+ * This is O(n) and handles:
+ * - Nested `{}` and `[]`
+ * - Braces inside quoted strings (`"feedback": "use {curly} braces"`)
+ * - Escaped characters inside strings (`\"`, `\\`)
+ */
+function findMatchingBrace(str: string, openPos: number): number {
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+
+  for (let i = openPos; i < str.length; i++) {
+    const ch = str[i];
+
+    if (escape) {
+      escape = false;
+      continue;
+    }
+
+    if (ch === '\\' && inString) {
+      escape = true;
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = !inString;
+      continue;
+    }
+
+    if (inString) continue;
+
+    if (ch === '{') depth++;
+    else if (ch === '}') {
+      depth--;
+      if (depth === 0) return i;
+    }
+  }
+
+  return -1;
+}
+
+/**
+ * Reasoning-style models (Gemma among them) prefix their answer with a scratchpad. That
+ * prose regularly contains a brace — e.g. ``Evidence object: `{ "text": "...", "page": 1 }` ``
+ * — and if we lock onto the first `{` in the response we parse the example instead of the
+ * real payload. Stripping the block first removes the whole class of failure.
+ */
+/**
+ * Control characters a model can leak into string values, which make JSON.parse fail.
+ * Built from a string literal so the escapes survive editing (raw bytes here do not).
+ * Tab, newline and carriage return are deliberately kept.
+ */
+const CONTROL_CHARS = new RegExp(
+  '[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]',
+  'g'
+);
+
+function stripReasoning(content: string): string {
+  let out = content;
+  for (const tag of ['thought', 'think', 'reasoning', 'scratchpad']) {
+    // Closed blocks first, then an unclosed opener (a truncated preamble).
+    out = out.replace(new RegExp(String.raw`<${tag}>[\s\S]*?</${tag}>`, 'gi'), ' ');
+    out = out.replace(new RegExp(String.raw`^[\s\S]*?<${tag}>`, 'i'), ' ');
+  }
+  return out.replace(/```(?:json)?/gi, ' ').trim();
+}
+
+/**
+ * Extracts and validates a JSON object from an LLM's free-text completion.
+ *
+ * Every `{` is treated as a candidate start: we balance-match it, parse it, and check it
+ * against the schema, returning the first candidate that actually validates. Taking the
+ * first brace on faith is what let a brace inside prose masquerade as the answer.
+ */
 function parseLooseJson<T>(content: string, task: Task<T>, config: ProviderConfig): T {
-  const unfenced = content.replace(/```(?:json)?/gi, '').trim();
-  const start = unfenced.indexOf('{');
-  const end = unfenced.lastIndexOf('}');
+  const cleaned = stripReasoning(content);
 
-  if (start === -1 || end <= start) {
-    throw new LLMError('LLM_PARSE_ERROR', 'Model response contained no JSON object', {
+  const fail = (why: string, cause?: unknown): never => {
+    throw new LLMError('LLM_PARSE_ERROR', why, {
       provider: config.id,
       model: config.model,
+      cause,
     });
+  };
+
+  const attempt = (raw: string): T | null => {
+    let candidate: unknown;
+    try {
+      candidate = JSON.parse(raw);
+    } catch {
+      try {
+        candidate = JSON.parse(
+          raw
+            .replace(CONTROL_CHARS, '')
+            .replace(/,\s*([}\]])/g, '$1')
+        );
+      } catch {
+        return null;
+      }
+    }
+    const parsed = task.schema.safeParse(candidate);
+    return parsed.success ? parsed.data : null;
+  };
+
+  let searchFrom = cleaned.indexOf('{');
+  if (searchFrom === -1) {
+    fail('Model response contained no JSON object');
   }
 
-  let candidate: unknown;
-  try {
-    candidate = JSON.parse(unfenced.slice(start, end + 1));
-  } catch (error) {
-    throw new LLMError('LLM_PARSE_ERROR', `Model response was not valid JSON: ${String(error)}`, {
-      provider: config.id,
-      model: config.model,
-      cause: error,
-    });
+  let sawObject = false;
+  let lastSchemaMiss: string | null = null;
+
+  while (searchFrom !== -1) {
+    const close = findMatchingBrace(cleaned, searchFrom);
+    if (close !== -1) {
+      sawObject = true;
+      const raw = cleaned.slice(searchFrom, close + 1);
+      const ok = attempt(raw);
+      if (ok !== null) return ok;
+
+      try {
+        const shape = task.schema.safeParse(JSON.parse(raw));
+        if (!shape.success) lastSchemaMiss = shape.error.message;
+      } catch {
+        /* not JSON at all — keep looking */
+      }
+    }
+    searchFrom = cleaned.indexOf('{', searchFrom + 1);
   }
 
-  const parsed = task.schema.safeParse(candidate);
-  if (!parsed.success) {
-    throw new LLMError(
-      'LLM_PARSE_ERROR',
-      `Model response did not match the ${task.schemaName} schema: ${parsed.error.message}`,
-      { provider: config.id, model: config.model, cause: parsed.error }
-    );
+  if (!sawObject) {
+    fail('Model response contained an unclosed JSON object');
   }
-
-  return parsed.data;
+  return fail(
+    `No JSON object in the model response matched the ${task.schemaName} schema` +
+      (lastSchemaMiss ? `: ${lastSchemaMiss}` : '')
+  );
 }
 
 /** One HTTP call, at one rung of the ladder. */
@@ -90,8 +197,6 @@ async function callOnce<T>(
   const client = getClientFor(config);
 
   const refusalOf = (refusal: string) =>
-    // A refusal is a decision about the content. Re-asking other models until one agrees
-    // would launder that decision, so this never fails over.
     new LLMError('LLM_REFUSAL', `Model refused the request: ${refusal}`, {
       provider: config.id,
       model: config.model,
@@ -145,8 +250,7 @@ async function callOnce<T>(
 
 /**
  * Walks the structured-output ladder within a single provider, stepping down only when the
- * provider explicitly rejects the response format. Costs nothing at steady state, since each
- * provider starts at the strongest rung it is known to support.
+ * provider explicitly rejects the response format.
  */
 async function callProvider<T>(
   config: ProviderConfig,
@@ -209,7 +313,7 @@ async function callChain<T>(task: Task<T>): Promise<StructuredCall<T>> {
         provider: config.id,
         model: config.model,
         code: classified.code,
-        message: classified.message,
+        message: condenseProviderMessage(classified.message),
       });
 
       if (!classified.failover) {
@@ -219,8 +323,6 @@ async function callChain<T>(task: Task<T>): Promise<StructuredCall<T>> {
     }
   }
 
-  // Report the first provider's failure code: the primary provider is the one the operator
-  // needs to act on, even though later providers were also tried.
   const primary = attempts[0];
   throw new LLMError(primary.code, primary.message, {
     provider: primary.provider,
@@ -251,11 +353,6 @@ ${input.studentAnswerText}
   });
 }
 
-/**
- * Turns the uploaded question paper and marking rubric into the structured questions and
- * rubric points grading runs against. Without this the app can only grade against whatever
- * rubric was hardcoded, regardless of what the teacher uploaded.
- */
 export async function extractPaperStructure(input: {
   questionPaperText: string | null;
   rubricText: string | null;

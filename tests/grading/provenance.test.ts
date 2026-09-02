@@ -7,6 +7,7 @@ vi.mock('@/lib/pdf/coordinates', () => ({ findEvidence: vi.fn(() => null) }));
 import { processGradingPipeline } from '@/lib/grading/grade';
 import { callGradingModel } from '@/lib/llm/client';
 import { extractTextWithPositions } from '@/lib/pdf/extract';
+import { PROMPT_VERSION } from '@/lib/llm/prompt';
 
 const QUESTIONS = [
   {
@@ -62,7 +63,7 @@ describe('grading provenance', () => {
     expect(output.modelUsed).toBe('gemma-4-31b-it');
     expect(output.providerUsed).toBe('gemma');
     // A degraded rung sends a different system prompt, so provenance must say so.
-    expect(output.promptVersion).toBe('v1-json');
+    expect(output.promptVersion).toBe(`${PROMPT_VERSION}-json`);
   });
 
   it('flags every result for human review when a fallback model graded the paper', async () => {
@@ -94,7 +95,7 @@ describe('grading provenance', () => {
     const output = await run();
 
     expect(output.modelUsed).toBe('gemini-3.7-flash');
-    expect(output.promptVersion).toBe('v1');
+    expect(output.promptVersion).toBe(PROMPT_VERSION);
     expect(output.results.some((r) => r.humanReview)).toBe(false);
   });
 });

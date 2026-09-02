@@ -61,18 +61,43 @@ const SUMMARY: MarkSummary = {
   submissionId: 'sub-test',
   totalMarks: 1,
   maxMarks: 2,
-  model: 'gemini/gemini-3.7-flash',
+  model: 'gemma/gemma-4-31b-it',
   gradedAt: new Date('2026-01-01T00:00:00Z'),
   needsReview: true,
-  rows: [
-    { label: '1.1', description: 'Identifies the closed circuit', status: 'CORRECT', marksAwarded: 1, maxMarks: 1 },
+  questions: [
     {
-      label: '1.2',
-      description: 'Places the ammeter in series',
-      status: 'INCORRECT',
-      marksAwarded: 0,
-      maxMarks: 1,
-      feedback: 'An ammeter must be connected in series.',
+      number: 1,
+      text: 'Describe how a simple electric circuit works.',
+      earned: 1,
+      max: 2,
+      points: [
+        {
+          label: '1.1',
+          description: 'Identifies the closed circuit',
+          expected: 'A closed loop lets current flow.',
+          status: 'CORRECT',
+          marksAwarded: 1,
+          maxMarks: 1,
+          evidence: 'The battery, switch and bulb are connected in a loop.',
+          feedback: 'Correctly identifies the closed path.',
+          correction: null,
+          confidence: 1,
+          humanReview: false,
+        },
+        {
+          label: '1.2',
+          description: 'Places the ammeter in series',
+          expected: 'An ammeter is connected in series.',
+          status: 'INCORRECT',
+          marksAwarded: 0,
+          maxMarks: 1,
+          evidence: 'I connected the ammeter across the bulb.',
+          feedback: 'The ammeter is described in parallel.',
+          correction: 'An ammeter must be connected in series.',
+          confidence: 0.9,
+          humanReview: true,
+        },
+      ],
     },
   ],
 };
@@ -175,5 +200,69 @@ describe('parseAnnotationPatch', () => {
     expect(() => parseAnnotationPatch({ width: 'wide' })).toThrow(/INVALID_PATCH/);
     expect(() => parseAnnotationPatch({})).toThrow(/INVALID_PATCH/);
     expect(() => parseAnnotationPatch(null)).toThrow(/INVALID_PATCH/);
+  });
+});
+
+describe('the report reads like a marked script', () => {
+  it('renders enough pages to carry the per-question breakdown', async () => {
+    const out = await generateAnnotatedPdf(originalPath, 'sub-report', ANNOTATIONS, SUMMARY);
+    const annotated = await PDFDocument.load(fs.readFileSync(out));
+
+    // 2 original pages + at least one report page.
+    expect(annotated.getPageCount()).toBeGreaterThanOrEqual(3);
+  });
+
+  it('grows the report when a question carries more rubric detail', async () => {
+    const lean = await generateAnnotatedPdf(originalPath, 'sub-lean', [], {
+      ...SUMMARY,
+      questions: [{ ...SUMMARY.questions[0], points: [SUMMARY.questions[0].points[0]] }],
+    });
+    const leanSize = fs.statSync(lean).size;
+
+    const rich = await generateAnnotatedPdf(originalPath, 'sub-rich', [], {
+      ...SUMMARY,
+      questions: [
+        {
+          ...SUMMARY.questions[0],
+          points: SUMMARY.questions[0].points.map((p) => ({
+            ...p,
+            expected: 'A long model answer. '.repeat(20),
+            evidence: 'A long quote from the student. '.repeat(20),
+          })),
+        },
+      ],
+    });
+
+    // The model answer and the student's words are actually written into the report, so a
+    // richer rubric produces a bigger file rather than being silently dropped.
+    expect(fs.statSync(rich).size).toBeGreaterThan(leanSize);
+  });
+
+  it('handles a question whose points carry no evidence at all', async () => {
+    await expect(
+      generateAnnotatedPdf(originalPath, 'sub-bare', [], {
+        ...SUMMARY,
+        questions: [
+          {
+            ...SUMMARY.questions[0],
+            points: [
+              {
+                label: '1.1',
+                description: 'Some point',
+                expected: null,
+                status: 'MISSING',
+                marksAwarded: 0,
+                maxMarks: 1,
+                evidence: null,
+                feedback: null,
+                correction: null,
+                confidence: null,
+                humanReview: false,
+              },
+            ],
+          },
+        ],
+      })
+    ).resolves.toBeTruthy();
   });
 });

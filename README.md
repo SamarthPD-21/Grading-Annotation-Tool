@@ -66,6 +66,19 @@ All model outputs pass through a two-layer validation firewall before persisting
 ### D. Deterministic Evidence Location
 Bounding box coordinates for PDF overlays are computed deterministically by searching extracted text items (`TextItem[]`) rather than asking the LLM to guess PDF coordinates.
 
+### D2. The Viewer Renders the Real PDF
+Evidence boxes are stored in the PDF's own coordinate space, so the viewer renders the actual
+page with pdf.js (`src/components/pdf-viewer/PdfPageCanvas.tsx`) and scales overlays by
+`renderedWidth / pageWidthInPoints`. It previously drew re-flowed extracted text, where those
+coordinates pointed at unrelated content — highlights landed on the question prompts instead
+of the student's words, and the screen disagreed with the exported PDF.
+
+The original file is streamed read-only by `GET /api/submissions/:id/file`. pdf.js needs its
+worker as a static asset, copied to `public/pdf.worker.min.mjs` by
+`scripts/copy-pdf-worker.mjs` on `postinstall` so it can never drift from the installed
+`pdfjs-dist` version. If the page cannot be rendered the viewer falls back to extracted text
+and **hides the overlays**, because a box in the wrong place is worse than no box.
+
 ### E. Immutability of Original Files
 Uploaded student answer PDFs are read-only. The annotated copy is written separately to
 `./uploads/generated/annotated-{submissionId}.pdf`, and carries the evidence boxes, the

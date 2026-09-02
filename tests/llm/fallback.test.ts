@@ -222,6 +222,85 @@ describe('structured-output ladder', () => {
     await expect(callGradingModel(INPUT)).resolves.toMatchObject({ result: GOOD_RESULT });
   });
 
+  it('handles JSON followed by trailing text (the Gemma position-109 error)', async () => {
+    process.env.LLM_PROVIDER_CHAIN = 'gemma';
+    const trailing = JSON.stringify(GOOD_RESULT) + '\n\nHere is a brief explanation of the marks awarded. The student correctly identified the process.';
+    respond('gemma-4-31b-it', 'create', () => contentOk(trailing));
+
+    await expect(callGradingModel(INPUT)).resolves.toMatchObject({ result: GOOD_RESULT });
+  });
+
+  it('handles JSON with curly braces inside string values', async () => {
+    process.env.LLM_PROVIDER_CHAIN = 'gemma';
+    const withBraces = {
+      rubricResults: [{
+        ...GOOD_RESULT.rubricResults[0],
+        feedback: 'Use the formula {F = ma} for this calculation',
+        correction: 'The answer should be in the form {x: number}',
+      }],
+    };
+    respond('gemma-4-31b-it', 'create', () =>
+      contentOk(JSON.stringify(withBraces) + '\n\nNote: see {reference page 2} for details.')
+    );
+
+    await expect(callGradingModel(INPUT)).resolves.toMatchObject({ result: withBraces });
+  });
+
+  it('handles JSON preceded by explanatory text', async () => {
+    process.env.LLM_PROVIDER_CHAIN = 'gemma';
+    respond('gemma-4-31b-it', 'create', () =>
+      contentOk('Here is the grading result:\n' + JSON.stringify(GOOD_RESULT))
+    );
+
+    await expect(callGradingModel(INPUT)).resolves.toMatchObject({ result: GOOD_RESULT });
+  });
+
+  it('ignores a reasoning preamble that contains a JSON-shaped example', async () => {
+    // Gemma really does answer like this. The scratchpad contains
+    // `Evidence object: { "text": "...", "page": 1 }`, and locking onto the first brace in
+    // the response parsed that example instead of the marks.
+    process.env.LLM_PROVIDER_CHAIN = 'gemma';
+    respond('gemma-4-31b-it', 'create', () =>
+      contentOk(
+        '<thought>I need to grade this. ' +
+          'Evidence object: `{ "text": "...", "page": 1 }`. ' +
+          'Let me check the rubric again.</thought>' +
+          JSON.stringify(GOOD_RESULT)
+      )
+    );
+
+    const call = await callGradingModel(INPUT);
+
+    expect(call.result).toEqual(GOOD_RESULT);
+  });
+
+  it('recovers when the reasoning block is left unclosed', async () => {
+    process.env.LLM_PROVIDER_CHAIN = 'gemma';
+    respond('gemma-4-31b-it', 'create', () =>
+      contentOk('<thought>Partial reasoning { "text": "x" } and then ' + JSON.stringify(GOOD_RESULT))
+    );
+
+    await expect(callGradingModel(INPUT)).resolves.toMatchObject({ result: GOOD_RESULT });
+  });
+
+  it('skips a leading object that does not match the schema', async () => {
+    process.env.LLM_PROVIDER_CHAIN = 'gemma';
+    respond('gemma-4-31b-it', 'create', () =>
+      contentOk('{"note":"preamble"} ' + JSON.stringify(GOOD_RESULT))
+    );
+
+    await expect(callGradingModel(INPUT)).resolves.toMatchObject({ result: GOOD_RESULT });
+  });
+
+  it('ignores commentary trailing the payload', async () => {
+    process.env.LLM_PROVIDER_CHAIN = 'gemma';
+    respond('gemma-4-31b-it', 'create', () =>
+      contentOk(JSON.stringify(GOOD_RESULT) + '  I hope this helps! {not json}')
+    );
+
+    await expect(callGradingModel(INPUT)).resolves.toMatchObject({ result: GOOD_RESULT });
+  });
+
   it('rejects schema-invalid JSON rather than grading on it', async () => {
     process.env.LLM_PROVIDER_CHAIN = 'gemma';
     respond('gemma-4-31b-it', 'create', () =>
@@ -234,3 +313,4 @@ describe('structured-output ladder', () => {
     expect(error.code).toBe('LLM_PARSE_ERROR');
   });
 });
+

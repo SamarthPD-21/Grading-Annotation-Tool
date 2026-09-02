@@ -1,15 +1,22 @@
 import OpenAI from 'openai';
 import { LLMError } from './errors';
 
-export type ProviderId = 'gemini' | 'gemma' | 'openai';
+export type ProviderId = 'gemini' | 'gemma' | 'openai' | 'groq' | 'openrouter' | 'mistral';
 
 /** Structured-output rungs, strongest first. */
 export type StructuredMode = 'strict' | 'json_object' | 'text';
 
+export type ApiKeyEnv =
+  | 'GEMINI_API_KEY'
+  | 'OPENAI_API_KEY'
+  | 'GROQ_API_KEY'
+  | 'OPENROUTER_API_KEY'
+  | 'MISTRAL_API_KEY';
+
 export interface ProviderConfig {
   id: ProviderId;
   model: string;
-  apiKeyEnv: 'GEMINI_API_KEY' | 'OPENAI_API_KEY';
+  apiKeyEnv: ApiKeyEnv;
   /** undefined => the SDK default (api.openai.com) */
   baseURL?: string;
   structuredMode: StructuredMode;
@@ -17,14 +24,13 @@ export interface ProviderConfig {
 }
 
 export const GOOGLE_OPENAI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/openai/';
-/**
- * Gemma leads because it is free at every tier with real quota, whereas Gemini Flash's free
- * tier allows only ~20 requests/day — with Gemini first almost every paper fell back, which
- * made the "graded by a fallback model" review flag meaningless.
- */
-export const DEFAULT_PROVIDER_CHAIN = 'gemma,gemini,openai';
+export const GROQ_BASE_URL = 'https://api.groq.com/openai/v1';
+export const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
+export const MISTRAL_BASE_URL = 'https://api.mistral.ai/v1';
 
-const PROVIDER_IDS: ProviderId[] = ['gemini', 'gemma', 'openai'];
+export const DEFAULT_PROVIDER_CHAIN = 'gemma,gemini,groq,openrouter,mistral,openai';
+
+const PROVIDER_IDS: ProviderId[] = ['gemini', 'gemma', 'openai', 'groq', 'openrouter', 'mistral'];
 const STRUCTURED_MODES: StructuredMode[] = ['strict', 'json_object', 'text'];
 
 function isProviderId(value: string): value is ProviderId {
@@ -35,16 +41,12 @@ function structuredModeFromEnv(value: string | undefined, fallback: StructuredMo
   return value && (STRUCTURED_MODES as string[]).includes(value) ? (value as StructuredMode) : fallback;
 }
 
-/**
- * Env is read here, at call time, rather than at module scope — module-level reads freeze
- * the values at import and are untestable.
- */
-export function getProviderConfig(id: ProviderId): ProviderConfig {
+export function getProviderConfig(id: ProviderId, customModel?: string): ProviderConfig {
   switch (id) {
     case 'gemini':
       return {
         id,
-        model: process.env.GEMINI_MODEL || 'gemini-3.7-flash',
+        model: customModel || process.env.GEMINI_MODEL || 'gemini-3.7-flash',
         apiKeyEnv: 'GEMINI_API_KEY',
         baseURL: GOOGLE_OPENAI_BASE_URL,
         structuredMode: 'strict',
@@ -53,18 +55,43 @@ export function getProviderConfig(id: ProviderId): ProviderConfig {
     case 'gemma':
       return {
         id,
-        model: process.env.GEMMA_MODEL || 'gemma-4-31b-it',
+        model: customModel || process.env.GEMMA_MODEL || 'gemma-4-31b-it',
         apiKeyEnv: 'GEMINI_API_KEY',
         baseURL: GOOGLE_OPENAI_BASE_URL,
-        // Starts one rung down: json_schema support for Gemma through the compat shim is
-        // unconfirmed. Promote to 'strict' via GEMMA_STRUCTURED_MODE once verified.
         structuredMode: structuredModeFromEnv(process.env.GEMMA_STRUCTURED_MODE, 'json_object'),
+        temperature: 0,
+      };
+    case 'groq':
+      return {
+        id,
+        model: customModel || process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
+        apiKeyEnv: 'GROQ_API_KEY',
+        baseURL: GROQ_BASE_URL,
+        structuredMode: 'json_object',
+        temperature: 0,
+      };
+    case 'openrouter':
+      return {
+        id,
+        model: customModel || process.env.OPENROUTER_MODEL || 'google/gemini-2.0-flash-lite:free',
+        apiKeyEnv: 'OPENROUTER_API_KEY',
+        baseURL: OPENROUTER_BASE_URL,
+        structuredMode: 'json_object',
+        temperature: 0,
+      };
+    case 'mistral':
+      return {
+        id,
+        model: customModel || process.env.MISTRAL_MODEL || 'mistral-small-latest',
+        apiKeyEnv: 'MISTRAL_API_KEY',
+        baseURL: MISTRAL_BASE_URL,
+        structuredMode: 'json_object',
         temperature: 0,
       };
     case 'openai':
       return {
         id,
-        model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+        model: customModel || process.env.OPENAI_MODEL || 'gpt-4o-mini',
         apiKeyEnv: 'OPENAI_API_KEY',
         structuredMode: 'strict',
         temperature: 0,
@@ -73,26 +100,45 @@ export function getProviderConfig(id: ProviderId): ProviderConfig {
 }
 
 /**
- * Ordered list of providers to try. Providers whose API key is unset are dropped, which is
- * what lets one default chain serve every configuration: an OpenAI-only install keeps
- * working untouched, and a Gemini-only install never attempts OpenAI.
+ * Ordered list of providers to try. Providers whose API key is unset are dropped.
+ * Supports syntax like "gemma, gemini, gemini/gemini-2.5-flash, groq, openrouter, openai"
  */
 export function getProviderChain(): ProviderConfig[] {
-  const requested = (process.env.LLM_PROVIDER_CHAIN || DEFAULT_PROVIDER_CHAIN)
+  const rawRequested = (process.env.LLM_PROVIDER_CHAIN || DEFAULT_PROVIDER_CHAIN)
     .split(',')
-    .map((s) => s.trim().toLowerCase())
+    .map((s) => s.trim())
     .filter(Boolean);
 
-  const chain = [...new Set(requested)]
-    .filter(isProviderId)
-    .map(getProviderConfig)
-    .filter((cfg) => !!process.env[cfg.apiKeyEnv]);
+  const configs: ProviderConfig[] = [];
+
+  for (const item of rawRequested) {
+    const parts = item.split('/');
+    const providerStr = parts[0].toLowerCase();
+    const modelStr = parts.slice(1).join('/');
+
+    if (isProviderId(providerStr)) {
+      const cfg = getProviderConfig(providerStr, modelStr || undefined);
+      if (process.env[cfg.apiKeyEnv]) {
+        configs.push(cfg);
+      }
+    }
+  }
+
+  // Deduplicate by provider id + model combination
+  const chain: ProviderConfig[] = [];
+  const seen = new Set<string>();
+  for (const cfg of configs) {
+    const key = `${cfg.id}:${cfg.model}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      chain.push(cfg);
+    }
+  }
 
   if (chain.length === 0) {
     throw new LLMError(
       'LLM_NOT_CONFIGURED',
-      'No AI provider is configured. Set GEMINI_API_KEY (covers both Gemini and Gemma) ' +
-        'or OPENAI_API_KEY, and make sure LLM_PROVIDER_CHAIN names a provider with a key.',
+      'No AI provider is configured. Set GEMINI_API_KEY (covers Gemini & Gemma), GROQ_API_KEY, OPENROUTER_API_KEY, MISTRAL_API_KEY, or OPENAI_API_KEY in .env.',
       { failover: false }
     );
   }
@@ -100,10 +146,11 @@ export function getProviderChain(): ProviderConfig[] {
   return chain;
 }
 
-const clients = new Map<ProviderId, OpenAI>();
+const clients = new Map<string, OpenAI>();
 
 export function getClientFor(config: ProviderConfig): OpenAI {
-  const cached = clients.get(config.id);
+  const cacheKey = `${config.id}:${config.apiKeyEnv}`;
+  const cached = clients.get(cacheKey);
   if (cached) {
     return cached;
   }
@@ -118,11 +165,10 @@ export function getClientFor(config: ProviderConfig): OpenAI {
   }
 
   const client = new OpenAI({ apiKey, baseURL: config.baseURL });
-  clients.set(config.id, client);
+  clients.set(cacheKey, client);
   return client;
 }
 
-/** Test helper — drops the memoised clients so a changed API key takes effect. */
 export function resetProviderClients(): void {
   clients.clear();
 }

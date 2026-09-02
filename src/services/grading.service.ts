@@ -57,6 +57,11 @@ export async function executeGrading(submissionId: string) {
 
     // Step 4: Atomic transaction boundary
     return await prisma.$transaction(async (tx: any) => {
+      // A re-grade replaces the previous run's overlays. Without this the pages accumulate
+      // a duplicate box per rubric point on every attempt, and stale boxes from an older
+      // run keep pointing at marks that no longer exist.
+      await tx.annotation.deleteMany({ where: { submissionId } });
+
       // Create GradingRun
       const run = await tx.gradingRun.create({
         data: {

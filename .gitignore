@@ -63,3 +63,6 @@ Thumbs.db
 *.tsbuildinfo
 next-env.d.ts
 .vercel
+
+# Video.md
+/VIDEO.md

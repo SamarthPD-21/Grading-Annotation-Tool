@@ -3,6 +3,7 @@ import {
   LLMError,
   LLMErrorCode,
   classifyLLMError,
+  condenseProviderMessage,
   toSubmissionError,
 } from '@/lib/llm/errors';
 
@@ -108,5 +109,35 @@ describe('toSubmissionError', () => {
       errorMessage: 'Could not read PDF',
       errorDetail: null,
     });
+  });
+});
+
+describe('condenseProviderMessage', () => {
+  const googleQuota =
+    '429 [{"error":{"code":429,"message":"You exceeded your current quota, please check ' +
+    'your plan and billing details.","status":"RESOURCE_EXHAUSTED","details":[{"@type":' +
+    '"type.googleapis.com/google.rpc.QuotaFailure","violations":[{"quotaValue":"20"}]}]}}]';
+
+  it('pulls the sentence out of a JSON error envelope', () => {
+    const out = condenseProviderMessage(googleQuota);
+
+    expect(out).toBe('You exceeded your current quota, please check your plan and billing details.');
+    expect(out).not.toContain('quotaValue');
+    expect(out).not.toContain('{');
+  });
+
+  it('keeps a plain vendor message as-is', () => {
+    const plain = '429 You have no credits remaining.';
+    expect(condenseProviderMessage(plain)).toBe(plain);
+  });
+
+  it('caps anything still too long for a banner', () => {
+    const out = condenseProviderMessage('word '.repeat(200), 60);
+    expect(out.length).toBeLessThanOrEqual(60);
+    expect(out.endsWith('…')).toBe(true);
+  });
+
+  it('never returns empty, even for a bare payload', () => {
+    expect(condenseProviderMessage('{"a":1}').length).toBeGreaterThan(0);
   });
 });
