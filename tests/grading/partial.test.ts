@@ -1,52 +1,51 @@
-import { describe, it, expect } from 'vitest';
-import { validateGradingResult } from '@/lib/grading/validate';
-import { calculateTotal } from '@/lib/grading/scoring';
-import { determineReviewNeeded } from '@/lib/grading/confidence';
-import rubric from '../fixtures/sample-rubric.json';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-describe('Test Category 2: Partial Answer', () => {
-  it('should award proportional marks and flag partial answers for review', () => {
-    const modelOutput = {
-      rubricResults: [
-        {
-          rubricId: 'r1',
-          status: 'CORRECT' as const,
-          marksAwarded: 4.0,
-          evidence: { text: 'Light dependent reactions convert solar energy', page: 1 },
-          feedback: 'Accurate',
-          correction: null,
-          confidence: 0.9,
-          humanReview: false,
-        },
-        {
-          rubricId: 'r2',
-          status: 'PARTIAL' as const,
-          marksAwarded: 1.0,
-          evidence: { text: 'Occurs inside the plant cell', page: 1 },
-          feedback: 'Vague location provided',
-          correction: 'Specify thylakoid membrane',
-          confidence: 0.75,
-          humanReview: true,
-        },
-        {
-          rubricId: 'r3',
-          status: 'MISSING' as const,
-          marksAwarded: 0.0,
-          evidence: null,
-          feedback: 'ATP and NADPH not mentioned',
-          correction: 'Describe ATP and NADPH synthesis',
-          confidence: 0.95,
-          humanReview: false,
-        },
-      ],
-    };
+vi.mock('@/lib/llm/client', () => ({ callGradingModel: vi.fn() }));
+vi.mock('@/lib/pdf/extract', () => ({ extractTextWithPositions: vi.fn() }));
 
-    const { total, maxMarks } = validateGradingResult(modelOutput, rubric);
-    const calculatedTotal = calculateTotal(modelOutput.rubricResults);
+import { runPipeline, result } from '../helpers/pipeline';
 
-    expect(total).toBe(5.0);
-    expect(maxMarks).toBe(10.0);
-    expect(calculatedTotal).toBe(5.0);
-    expect(determineReviewNeeded(modelOutput.rubricResults[1])).toBe(true);
+beforeEach(() => vi.clearAllMocks());
+
+describe('Test Category 2: Partially Correct Answer', () => {
+  const partial = {
+    rubricResults: [
+      result('r1', 'CORRECT', 4, {
+        evidence: { text: 'Light energy is absorbed by chlorophyll', page: 1 },
+        feedback: 'Accurate explanation.',
+        confidence: 0.96,
+      }),
+      // Half marks, low confidence — the case a marker most needs surfaced.
+      result('r2', 'PARTIAL', 1, {
+        evidence: { text: 'thylakoid membrane', page: 1 },
+        feedback: 'Location named but not linked to the reaction.',
+        correction: 'State that the light reactions happen in the thylakoid membrane.',
+        confidence: 0.45,
+      }),
+      result('r3', 'MISSING', 0, { feedback: 'No products mentioned.', confidence: 0.9 }),
+    ],
+  };
+
+  it('awards proportional marks rather than all-or-nothing', async () => {
+    const out = await runPipeline(partial);
+
+    expect(out.totalMarks).toBe(5);
+    expect(out.maxMarks).toBe(10);
+    expect(out.results.map((r) => r.status)).toEqual(['CORRECT', 'PARTIAL', 'MISSING']);
+  });
+
+  it('flags the low-confidence point for human review', async () => {
+    const out = await runPipeline(partial);
+
+    const r2 = out.results.find((r) => r.rubricId === 'r2');
+    expect(r2?.humanReview).toBe(true);
+    // Confident points are not swept up in the flag.
+    expect(out.results.find((r) => r.rubricId === 'r1')?.humanReview).toBe(false);
+  });
+
+  it('carries a correction for the point that lost marks', async () => {
+    const out = await runPipeline(partial);
+
+    expect(out.results.find((r) => r.rubricId === 'r2')?.correction).toMatch(/thylakoid/i);
   });
 });

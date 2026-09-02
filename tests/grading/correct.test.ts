@@ -1,51 +1,63 @@
-import { describe, it, expect } from 'vitest';
-import { validateGradingResult } from '@/lib/grading/validate';
-import { calculateTotal } from '@/lib/grading/scoring';
-import rubric from '../fixtures/sample-rubric.json';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-describe('Test Category 1: Correct Answer', () => {
-  it('should award full marks when answer satisfies all rubric points', () => {
-    const modelOutput = {
-      rubricResults: [
-        {
-          rubricId: 'r1',
-          status: 'CORRECT' as const,
-          marksAwarded: 4.0,
-          evidence: { text: 'Light dependent reactions convert light into chemical energy', page: 1 },
-          feedback: 'Accurate explanation',
-          correction: null,
-          confidence: 0.95,
-          humanReview: false,
-        },
-        {
-          rubricId: 'r2',
-          status: 'CORRECT' as const,
-          marksAwarded: 2.0,
-          evidence: { text: 'Occurs in the thylakoid membrane', page: 1 },
-          feedback: 'Location identified',
-          correction: null,
-          confidence: 0.98,
-          humanReview: false,
-        },
-        {
-          rubricId: 'r3',
-          status: 'CORRECT' as const,
-          marksAwarded: 4.0,
-          evidence: { text: 'Produces ATP and NADPH', page: 1 },
-          feedback: 'Correct products identified',
-          correction: null,
-          confidence: 0.96,
-          humanReview: false,
-        },
-      ],
-    };
+vi.mock('@/lib/llm/client', () => ({ callGradingModel: vi.fn() }));
+vi.mock('@/lib/pdf/extract', () => ({ extractTextWithPositions: vi.fn() }));
 
-    const { total, maxMarks } = validateGradingResult(modelOutput, rubric);
-    const calculatedTotal = calculateTotal(modelOutput.rubricResults);
+import { runPipeline, result, QUESTIONS } from '../helpers/pipeline';
 
-    expect(total).toBe(10.0);
-    expect(maxMarks).toBe(10.0);
-    expect(calculatedTotal).toBe(10.0);
-    expect(total).toBeLessThanOrEqual(maxMarks);
+beforeEach(() => vi.clearAllMocks());
+
+describe('Test Category 1: Fully Correct Answer', () => {
+  const allCorrect = {
+    rubricResults: [
+      result('r1', 'CORRECT', 4, {
+        evidence: { text: 'Light energy is absorbed by chlorophyll', page: 1 },
+        feedback: 'Accurately explains the light dependent reactions.',
+        confidence: 0.98,
+      }),
+      result('r2', 'CORRECT', 2, {
+        evidence: { text: 'occurs in the thylakoid membrane', page: 1 },
+        feedback: 'Correct location.',
+        confidence: 0.99,
+      }),
+      result('r3', 'CORRECT', 4, {
+        evidence: { text: 'produce ATP and NADPH', page: 1 },
+        feedback: 'Both products named.',
+        confidence: 0.97,
+      }),
+    ],
+  };
+
+  it('awards full marks through the real pipeline', async () => {
+    const out = await runPipeline(allCorrect);
+
+    expect(out.totalMarks).toBe(10);
+    expect(out.maxMarks).toBe(10);
+    expect(out.results).toHaveLength(3);
+    expect(out.results.every((r) => r.status === 'CORRECT')).toBe(true);
+  });
+
+  it('never exceeds the marks available', async () => {
+    const out = await runPipeline(allCorrect);
+
+    expect(out.totalMarks).toBeLessThanOrEqual(out.maxMarks);
+    // The total is the sum of the rubric points, not a number the model chose.
+    const summed = out.results.reduce((s, r) => s + r.marksAwarded, 0);
+    expect(out.totalMarks).toBe(summed);
+    expect(out.maxMarks).toBe(QUESTIONS[0].rubricPoints.reduce((s, p) => s + p.maxMarks, 0));
+  });
+
+  it('does not flag a confident full-marks run for review', async () => {
+    const out = await runPipeline(allCorrect);
+
+    expect(out.results.some((r) => r.humanReview)).toBe(false);
+  });
+
+  it('locates each quote on the page so the marks carry evidence', async () => {
+    const out = await runPipeline(allCorrect);
+
+    expect(out.results.every((r) => r.evidenceLocation !== null)).toBe(true);
+    expect(out.results[0].evidenceLocation?.page).toBe(1);
+    expect(out.results[0].evidenceLocation?.bbox.width).toBeGreaterThan(0);
   });
 });
