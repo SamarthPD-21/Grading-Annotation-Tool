@@ -13,6 +13,11 @@ export interface AnnotationCoords {
 
 export interface AnnotationOverlayProps extends AnnotationCoords {
   id: string;
+  /**
+   * One rect per line of the quote, in PDF points. Falls back to the single union box for
+   * rows written before per-line rects existed.
+   */
+  rects?: AnnotationCoords[] | null;
   rubricResultId?: string | null;
   type: 'HIGHLIGHT' | 'BOX' | 'COMMENT';
   /** CORRECT / PARTIAL / INCORRECT / MISSING — drives the colour. */
@@ -51,6 +56,7 @@ export function AnnotationOverlay({
   y,
   width,
   height,
+  rects,
   type,
   status,
   label,
@@ -133,21 +139,20 @@ export function AnnotationOverlay({
   const style = STATUS_STYLES[status ?? ''] ?? FALLBACK_STYLE;
   const showDetail = (isSelected || isHovered) && (comment || correction);
 
+  // A quote wraps across lines, so it is drawn as one rect per line. The wrapper spans their
+  // union but is pointer-transparent, so the gaps between lines stay clickable on the page
+  // beneath while the rects themselves still bubble drag and hover up to this element.
+  const lineRects = rects && rects.length > 0 ? rects : [coords];
+
   return (
     <div
       onMouseDown={handleMouseDown}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
-      className={`absolute rounded-[3px] border ${style.box} ${
-        type === 'HIGHLIGHT' ? '' : 'border-dashed'
-      } ${isDragging ? 'cursor-grabbing' : 'cursor-grab'} ${
-        isSelected
-          ? 'ring-2 ring-primary ring-offset-1 ring-offset-card z-30'
-          : isHovered
-          ? 'z-20 brightness-125'
-          : 'z-10'
+      className={`pointer-events-none absolute ${
+        isSelected ? 'z-30' : isHovered ? 'z-20' : 'z-10'
       } ${isDimmed && !isHovered ? 'opacity-25' : 'opacity-100'} ${
-        isDragging ? '' : 'transition-all duration-150'
+        isDragging ? '' : 'transition-opacity duration-150'
       }`}
       style={{
         left: `${coords.x * scale}px`,
@@ -156,12 +161,29 @@ export function AnnotationOverlay({
         height: `${Math.max(coords.height * scale, 8)}px`,
       }}
     >
+      {lineRects.map((rect, i) => (
+        <span
+          key={i}
+          className={`pointer-events-auto absolute rounded-[2px] border ${style.box} ${
+            type === 'HIGHLIGHT' ? '' : 'border-dashed'
+          } ${isDragging ? 'cursor-grabbing' : 'cursor-grab'} ${
+            isSelected ? 'ring-2 ring-primary ring-offset-1 ring-offset-card' : ''
+          } ${isHovered && !isSelected ? 'brightness-125' : ''}`}
+          style={{
+            left: `${(rect.x - coords.x) * scale}px`,
+            top: `${(rect.y - coords.y) * scale}px`,
+            width: `${Math.max(rect.width * scale, 6)}px`,
+            height: `${Math.max(rect.height * scale, 6)}px`,
+          }}
+        />
+      ))}
+
       {/* Marker sits outside the box so it never covers the student's words, and appears on
           demand only: rubric points routinely cite overlapping sentences, so always-on
           markers stack into an unreadable pile at the same coordinates. */}
       {label && (isSelected || isHovered) && (
         <span
-          className={`absolute -left-1.5 -top-2 z-10 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[9px] font-bold text-white shadow-sm ${style.dot}`}
+          className={`pointer-events-auto absolute -left-1.5 -top-2 z-10 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[9px] font-bold text-white shadow-sm ${style.dot}`}
         >
           {label}
         </span>
@@ -172,7 +194,7 @@ export function AnnotationOverlay({
           onMouseDown={(e) => e.stopPropagation()}
           onClick={handleDeleteClick}
           title="Delete annotation"
-          className="absolute -right-2 -top-2 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[9px] font-bold text-destructive-foreground shadow hover:brightness-110"
+          className="pointer-events-auto absolute -right-2 -top-2 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[9px] font-bold text-destructive-foreground shadow hover:brightness-110"
         >
           ✕
         </button>

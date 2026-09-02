@@ -2,6 +2,7 @@ import { vi } from 'vitest';
 import { processGradingPipeline } from '@/lib/grading/grade';
 import { callGradingModel } from '@/lib/llm/client';
 import { extractTextWithPositions } from '@/lib/pdf/extract';
+import { transcribeAnswerPdf } from '@/lib/llm/vision';
 import type { GradingResultSchemaType } from '@/lib/llm/schema';
 
 /**
@@ -66,13 +67,19 @@ function buildPage(sentences: string[]) {
 
   return {
     fullText: sentences.join(' '),
-    pages: [{ pageNumber: 1, text: sentences.join(' '), items, width: 612, height: 792 }],
+    pages: [
+      { pageNumber: 1, text: sentences.join(' '), items, hasImages: false, width: 612, height: 792 },
+    ],
   };
 }
 
 export interface RunOptions {
   /** Defaults to a believable three-sentence answer; pass [] for a blank script. */
   sentences?: string[];
+  /** Simulates a scan: pixels on the page but no selectable text. */
+  hasImages?: boolean;
+  /** What the vision model returns for a scan. */
+  transcript?: string;
   fallbackUsed?: boolean;
   model?: string;
 }
@@ -83,7 +90,14 @@ export async function runPipeline(
 ) {
   const sentences = options.sentences ?? ANSWER_SENTENCES;
 
-  vi.mocked(extractTextWithPositions).mockResolvedValue(buildPage(sentences));
+  const extraction = buildPage(sentences);
+  extraction.pages[0].hasImages = options.hasImages ?? false;
+  vi.mocked(extractTextWithPositions).mockResolvedValue(extraction);
+  vi.mocked(transcribeAnswerPdf).mockResolvedValue({
+    text: options.transcript ?? 'Transcribed handwriting from the scanned page.',
+    provider: 'gemini',
+    model: 'gemini-2.5-flash',
+  });
   vi.mocked(callGradingModel).mockResolvedValue({
     result: modelResult,
     provider: 'gemma',

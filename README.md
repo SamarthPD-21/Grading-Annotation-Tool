@@ -66,6 +66,31 @@ All model outputs pass through a two-layer validation firewall before persisting
 ### D. Deterministic Evidence Location
 Bounding box coordinates for PDF overlays are computed deterministically by searching extracted text items (`TextItem[]`) rather than asking the LLM to guess PDF coordinates.
 
+### D1. Scanned and Handwritten Answers
+A photographed or scanned answer has no embedded text layer, so `getTextContent()` returns
+nothing. Extraction therefore checks the page's operator list for image painting, which
+separates the two cases that both yield no text:
+
+| Page | Text | Images | Handling |
+| --- | --- | --- | --- |
+| Normal PDF | yes | – | Graded from the text layer, with evidence boxes |
+| Scan / photo | no | yes | Transcribed by a vision model, then graded |
+| Genuinely blank | no | no | Graded as a blank answer |
+
+The scan path (`src/lib/llm/vision.ts`) sends the PDF whole to Gemini, which rasterises it
+itself — that avoids pulling in a native canvas dependency purely to turn pages into images.
+The transcription prompt preserves the student's own spelling and grammar rather than
+tidying it, since those mistakes are frequently what is being marked.
+
+**A transcribed run is never presented as equivalent.** It yields words but no coordinates,
+so no evidence can be located on the page. `GradingRun.textSource` records `'ocr'`,
+`transcribedBy` records the model, every rubric point is flagged for human review, and the
+UI says the marks came from a transcription. Without that, an un-annotated run would be
+indistinguishable from one where evidence simply was not found.
+
+Before this, a scan was graded on the string `"--- Page 1 ---"` — the only content in an
+empty text layer — and produced a confident zero.
+
 ### D2. The Viewer Renders the Real PDF
 Evidence boxes are stored in the PDF's own coordinate space, so the viewer renders the actual
 page with pdf.js (`src/components/pdf-viewer/PdfPageCanvas.tsx`) and scales overlays by
@@ -86,6 +111,16 @@ feedback and correction beside each box, and an appended marks summary. It is re
 every export, so edited annotations are always reflected. Covered by
 `tests/grading/annotate-export.test.ts`, which asserts the original is byte-identical
 afterwards.
+
+### E1. The Marked Page Carries Markers, the Report Carries the Words
+Each evidence box is labelled with its rubric number (`1.2`) in the page margin, and nothing
+else. Feedback and corrections used to be written beside every box, which buried the
+student's own work under marker commentary; they now appear once, in the report, under the
+question they belong to.
+
+Because the page no longer shows note text, the report reads an edited annotation's
+`comment`/`correction` in preference to the grading model's original wording — otherwise a
+marker's edit would have nowhere left to appear in the export.
 
 ### E2. Annotations Stay Editable Without Re-Grading
 Boxes can be dragged, their feedback/correction text edited, and individual annotations

@@ -68,6 +68,8 @@ export async function executeGrading(submissionId: string) {
           submissionId,
           model: pipelineResult.modelUsed,
           provider: pipelineResult.providerUsed,
+          textSource: pipelineResult.textSource,
+          transcribedBy: pipelineResult.transcribedBy,
           fallbackUsed: pipelineResult.fallbackUsed,
           promptVersion: pipelineResult.promptVersion,
           gradingEngineVersion: pipelineResult.engineVersion,
@@ -110,6 +112,9 @@ export async function executeGrading(submissionId: string) {
               y: res.evidenceLocation.bbox.y,
               width: res.evidenceLocation.bbox.width,
               height: res.evidenceLocation.bbox.height,
+              // One rect per line of the quote, so a multi-line highlight no longer paints
+              // over the whitespace (and any diagrams) between its lines.
+              rects: JSON.stringify(res.evidenceLocation.rects),
               type: res.status === 'CORRECT' ? 'HIGHLIGHT' : 'BOX',
               comment: res.feedback,
               correction: res.correction,

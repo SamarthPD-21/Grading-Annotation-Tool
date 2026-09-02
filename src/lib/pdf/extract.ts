@@ -23,6 +23,21 @@ export async function extractTextWithPositionsFromBuffer(
       const page = await pdfDoc.getPage(pageNum);
       const viewport = page.getViewport({ scale: 1.0 });
       const textContent = await page.getTextContent();
+
+      // Distinguishes a scan from a genuinely empty page: both yield no text, but only one
+      // of them paints an image. Without this a photographed answer is graded as blank.
+      let hasImages = false;
+      try {
+        const ops = await page.getOperatorList();
+        const imageOps = new Set([
+          pdfjsLib.OPS.paintImageXObject,
+          pdfjsLib.OPS.paintInlineImageXObject,
+          pdfjsLib.OPS.paintImageMaskXObject,
+        ]);
+        hasImages = ops.fnArray.some((fn: number) => imageOps.has(fn));
+      } catch {
+        // Operator lists are best-effort; a failure here must not stop extraction.
+      }
       const pageItems: TextItem[] = [];
       let pageString = '';
 
@@ -51,6 +66,7 @@ export async function extractTextWithPositionsFromBuffer(
         pageNumber: pageNum,
         text: pageString.trim(),
         items: pageItems,
+        hasImages,
         // Carried through so the client can scale overlays from PDF points to rendered px.
         width: Math.round(viewport.width),
         height: Math.round(viewport.height),
@@ -69,6 +85,7 @@ export async function extractTextWithPositionsFromBuffer(
           pageNumber: 1,
           text: textContent,
           items: [],
+          hasImages: false,
           // US Letter at 72dpi — the only sane guess when pdfjs could not open the file.
           width: 612,
           height: 792,

@@ -182,3 +182,36 @@ export function PipelineFailureNotice({
     </div>
   );
 }
+
+/**
+ * A scanned or handwritten answer has no text layer, so it was read by a vision model
+ * first. That transcription is a second layer of interpretation and carries no
+ * coordinates — saying so is the difference between "no evidence found" and "evidence
+ * cannot be located here".
+ */
+export function TranscriptionNotice({ transcribedBy }: { transcribedBy?: string | null }) {
+  return (
+    <div className="flex items-start gap-2.5 p-3.5 rounded-lg bg-primary/5 border border-primary/20 animate-fade-in">
+      <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 mt-0.5 text-primary">
+        <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
+        <circle cx="12" cy="12" r="3" />
+      </svg>
+      <div className="text-sm min-w-0">
+        <span className="font-bold text-primary">Read from a scan. </span>
+        <span className="text-foreground/80">
+          This answer had no selectable text, so it was transcribed
+          {transcribedBy ? (
+            <>
+              {' '}by <span className="font-mono text-xs font-semibold text-primary">{transcribedBy}</span>
+            </>
+          ) : (
+            ' by a vision model'
+          )}{' '}
+          before grading. Marks are based on that transcription, and evidence cannot be
+          highlighted on the page — check the wording against the original before releasing
+          the marks.
+        </span>
+      </div>
+    </div>
+  );
+}

@@ -170,7 +170,7 @@ app.get('/api/submissions/:id/text', async (req, res) => {
     if (!fs.existsSync(submission.studentFile)) {
       res.json({
         missingFile: true,
-        pages: [{ pageNumber: 1, text: '', items: [], width: 612, height: 792 }],
+        pages: [{ pageNumber: 1, text: '', items: [], hasImages: false, width: 612, height: 792 }],
       });
       return;
     }

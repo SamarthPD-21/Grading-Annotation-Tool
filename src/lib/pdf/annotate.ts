@@ -9,6 +9,8 @@ export interface AnnotationItem {
   width: number;
   height: number;
   type: 'HIGHLIGHT' | 'BOX' | 'COMMENT';
+  /** One rect per line of the quote; falls back to the single x/y/width/height box. */
+  rects?: { x: number; y: number; width: number; height: number }[] | null;
   /** Rubric status, so the box is coloured the same way the on-screen overlay is. */
   status?: string | null;
   label?: string | null;
@@ -116,61 +118,80 @@ function toWinAnsi(text: string): string {
 
 function drawAnnotation(page: PDFPage, annot: AnnotationItem, font: PDFFont, bold: PDFFont): void {
   const { width: pageWidth, height: pageHeight } = page.getSize();
-  // Stored coordinates use a top-left origin; PDF space is bottom-left.
-  const pdfY = pageHeight - annot.y - annot.height;
   const color = colorFor(annot.status);
 
-  if (annot.type === 'HIGHLIGHT') {
-    page.drawRectangle({
-      x: annot.x,
-      y: pdfY,
-      width: annot.width,
-      height: annot.height,
-      color,
-      opacity: 0.18,
-      borderColor: color,
-      borderWidth: 1,
-    });
-  } else {
-    // BOX and COMMENT both get an outline. COMMENT previously drew nothing at all, leaving
-    // its correction floating with no indication of what it referred to.
-    page.drawRectangle({
-      x: annot.x,
-      y: pdfY,
-      width: annot.width,
-      height: annot.height,
-      borderColor: color,
-      borderWidth: 1.5,
-      opacity: 0,
-    });
+  // Draw one rect per line of the quote. A single union box spans the gaps between lines,
+  // covering unrelated content and colliding with neighbouring quotes.
+  const boxes =
+    annot.rects && annot.rects.length > 0
+      ? annot.rects
+      : [{ x: annot.x, y: annot.y, width: annot.width, height: annot.height }];
+
+  for (const box of boxes) {
+    // Stored coordinates use a top-left origin; PDF space is bottom-left.
+    const boxY = pageHeight - box.y - box.height;
+
+    if (annot.type === 'HIGHLIGHT') {
+      page.drawRectangle({
+        x: box.x,
+        y: boxY,
+        width: box.width,
+        height: box.height,
+        color,
+        opacity: 0.18,
+        borderColor: color,
+        borderWidth: 1,
+      });
+    } else {
+      // BOX and COMMENT both get an outline. COMMENT previously drew nothing at all,
+      // leaving its correction floating with no indication of what it referred to.
+      page.drawRectangle({
+        x: box.x,
+        y: boxY,
+        width: box.width,
+        height: box.height,
+        borderColor: color,
+        borderWidth: 1.5,
+        opacity: 0,
+      });
+    }
   }
 
-  if (annot.label) {
-    page.drawText(toWinAnsi(annot.label), {
-      x: annot.x,
-      y: pdfY + annot.height + 2,
-      size: 7,
-      font: bold,
-      color,
-    });
-  }
+  // Only a marker goes on the page — "1.2" ties the box to that rubric point in the report.
+  // The feedback and correction used to be written beside every box, which buried the
+  // student's own work under marker commentary; they live in the report instead.
+  if (!annot.label) return;
 
-  const parts: string[] = [];
-  // Both are kept — the old export dropped the feedback whenever a correction existed.
-  if (annot.comment) parts.push('Feedback: ' + annot.comment);
-  if (annot.correction) parts.push('Correction: ' + annot.correction);
-  if (parts.length === 0) return;
-
+  const first = boxes[0];
+  const markerY = pageHeight - first.y - first.height;
   const size = 7.5;
-  const maxWidth = Math.max(120, Math.min(pageWidth - annot.x - 24, 320));
-  const lines = parts.flatMap((p) => wrapText(toWinAnsi(p), font, size, maxWidth)).slice(0, 6);
+  const textWidth = bold.widthOfTextAtSize(toWinAnsi(annot.label), size);
+  const chipW = textWidth + 7;
+  const chipH = size + 4;
 
-  let cursorY = pdfY - 9;
-  for (const line of lines) {
-    if (cursorY < 12) break; // Stop at the bottom margin rather than drawing off-page.
-    page.drawText(line, { x: annot.x, y: cursorY, size, font, color });
-    cursorY -= size + 1.5;
-  }
+  // Sit in the left margin where there is room, otherwise just above the line. Either way
+  // the marker never covers what the student wrote.
+  const inMargin = first.x - chipW - 3 >= 2;
+  const chipX = inMargin ? first.x - chipW - 3 : Math.min(first.x, pageWidth - chipW - 2);
+  const chipY = inMargin
+    ? markerY + (first.height - chipH) / 2
+    : Math.min(markerY + first.height + 1.5, pageHeight - chipH - 2);
+
+  page.drawRectangle({
+    x: chipX,
+    y: chipY,
+    width: chipW,
+    height: chipH,
+    color,
+    opacity: 0.9,
+  });
+  page.drawText(toWinAnsi(annot.label), {
+    x: chipX + 3.5,
+    y: chipY + 3,
+    size,
+    font: bold,
+    color: rgb(1, 1, 1),
+  });
 }
 
 /** Minimal flowing-text cursor with automatic page breaks. */

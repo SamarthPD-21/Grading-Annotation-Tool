@@ -4,6 +4,55 @@ function normalizeText(str: string): string {
   return str.toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
+/**
+ * Splits matched items into one rectangle per visual line.
+ *
+ * Text items carry no line number, so a line break is inferred from a vertical step larger
+ * than half a glyph height. Each line then gets a rect bounding only its own words.
+ */
+function lineRectsOf(matched: TextItem[]): BoundingBox[] {
+  const sorted = [...matched].sort((a, b) => a.y - b.y || a.x - b.x);
+  const lines: TextItem[][] = [];
+
+  for (const item of sorted) {
+    const current = lines[lines.length - 1];
+    const reference = current?.[0];
+    const sameLine =
+      reference !== undefined && Math.abs(item.y - reference.y) <= Math.max(reference.height, item.height) * 0.5;
+
+    if (sameLine) current.push(item);
+    else lines.push([item]);
+  }
+
+  return lines.map((line) => {
+    let minX = line[0].x;
+    let minY = line[0].y;
+    let maxX = line[0].x + line[0].width;
+    let maxY = line[0].y + line[0].height;
+
+    for (const item of line) {
+      minX = Math.min(minX, item.x);
+      minY = Math.min(minY, item.y);
+      maxX = Math.max(maxX, item.x + item.width);
+      maxY = Math.max(maxY, item.y + item.height);
+    }
+
+    return {
+      x: minX,
+      y: minY,
+      width: Math.max(MIN_W, maxX - minX),
+      height: Math.max(MIN_H, maxY - minY),
+    };
+  });
+}
+
+/**
+ * Smallest rect we will emit. Shared by the union box and the per-line rects so a
+ * single-line quote produces identical geometry for both.
+ */
+const MIN_W = 8;
+const MIN_H = 8;
+
 /** Union rectangle over every matched text item. */
 function boundsOf(matched: TextItem[]): BoundingBox {
   let minX = matched[0].x;
@@ -21,8 +70,8 @@ function boundsOf(matched: TextItem[]): BoundingBox {
   return {
     x: minX,
     y: minY,
-    width: Math.max(20, maxX - minX),
-    height: Math.max(15, maxY - minY),
+    width: Math.max(MIN_W, maxX - minX),
+    height: Math.max(MIN_H, maxY - minY),
   };
 }
 
@@ -132,7 +181,7 @@ export function findEvidence(
     }
 
     if (matched.length > 0) {
-      return { page: page.pageNumber, bbox: boundsOf(matched) };
+      return { page: page.pageNumber, bbox: boundsOf(matched), rects: lineRectsOf(matched) };
     }
   }
 

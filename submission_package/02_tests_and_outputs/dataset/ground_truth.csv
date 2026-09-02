@@ -1,0 +1,13 @@
+id,split,file,student,roll,expected_q1,expected_q2,expected_q3,expected_total,profile
+TR-01,train,TR-01_full-credit.pdf,Ananya Iyer,S-1042,5,5,5,15,"Full credit — complete, correctly reasoned answers to all three questions."
+TR-02,train,TR-02_partial-credit.pdf,Rohit Menon,S-1057,3,3,3,9,"Partial credit — the core idea of each question is there, but the instrument placement, the counter-argument and the cost-shift analysis are all missing."
+TR-03,train,TR-03_incorrect.pdf,Kabir Shah,S-1063,1,1,1,3,"Confidently wrong — voltmeter in series, resistance stated to increase current, equilibrium read off the wrong row, and an English answer that asserts without support."
+TR-04,train,TR-04_blank.pdf,Sana Qureshi,S-1071,0,0,0,0,"Effectively blank — the script was handed in with only the headings copied out."
+TR-05,train,TR-05_ocr-noise.pdf,Devansh Rao,S-1080,4.5,4.5,4.5,13.5,"Correct content carried through a poor scan — the same substance as TR-01, degraded with the character confusions a real OCR pass produces (rn/m, l/1, 0/O, split words)."
+TE-01,test,TE-01_strong-with-gap.pdf,Meera Krishnan,S-2011,5,5,4,14,"Strong overall, one clean gap — Q3 never explains what happens away from equilibrium, which should cost exactly one rubric point and no more."
+TE-02,test,TE-02_contrarian-argument.pdf,Aarav Bansal,S-2019,4,5,5,14,"Argues the opposite conclusion to the model answer for Q2, but argues it properly — position, development, counter-view, example, conclusion."
+TE-03,test,TE-03_padded-shallow.pdf,Zoya Farooqui,S-2026,2,2,1.5,5.5,"Long but empty — restates the question at length, repeats itself, and rarely commits to a testable claim."
+TE-04,test,TE-04_partially-blank.pdf,Nikhil Prasad,S-2033,1,4,0,5,"Ran out of time — Q2 answered properly, Q1 abandoned after two lines, Q3 not started."
+TE-05,test,TE-05_diagram-heavy.pdf,Tanvi Deshmukh,S-2040,2.5,1,2,5.5,"Draws well, writes almost nothing — correct diagrams for Q1 and Q3 with only label-level text, so most explanation points are unsupported."
+TE-06,test,TE-06_wrong-equilibrium.pdf,Imran Sheikh,S-2048,4,4,2,10,"Sound method, wrong number — reads the equilibrium off the wrong row of the schedule and then reasons correctly from that wrong value."
+TE-07,test,TE-07_heavy-scan-noise.pdf,Preeti Nair,S-2055,4,4.5,4,12.5,"Worst-case scan — correct answers under heavy character substitution, hyphenated line breaks and a stray scanner artefact line."

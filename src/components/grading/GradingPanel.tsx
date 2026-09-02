@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { FallbackNotice, PipelineFailureNotice } from './PipelineNotice';
+import { FallbackNotice, PipelineFailureNotice, TranscriptionNotice } from './PipelineNotice';
 import { AnnotationEditor } from './AnnotationEditor';
 
 interface ExtractedPage {
@@ -49,6 +49,8 @@ export interface GradingPanelProps {
       model?: string;
       provider?: string | null;
       fallbackUsed?: boolean;
+      textSource?: string | null;
+      transcribedBy?: string | null;
       results: {
         id: string;
         rubricPointId: string;
@@ -70,11 +72,23 @@ export interface GradingPanelProps {
       y: number;
       width: number;
       height: number;
+      rects?: string | null;
       type: 'HIGHLIGHT' | 'BOX' | 'COMMENT';
       comment: string | null;
       correction: string | null;
     }[];
   };
+}
+
+/** Stored as a JSON string; older rows have none and fall back to the union box. */
+function parseRects(raw?: string | null) {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) && parsed.length > 0 ? parsed : null;
+  } catch {
+    return null;
+  }
 }
 
 function ScoreRing({ total, max }: { total: number; max: number }) {
@@ -332,6 +346,10 @@ export function GradingPanel({ submission: initialSubmission }: GradingPanelProp
         />
       )}
 
+      {!submission.errorMessage && latestRun?.textSource === 'ocr' && (
+        <TranscriptionNotice transcribedBy={latestRun.transcribedBy} />
+      )}
+
       {/* The run succeeded, but not on the model we asked for — say so. */}
       {!submission.errorMessage && latestRun?.fallbackUsed && (
         <FallbackNotice
@@ -502,6 +520,7 @@ export function GradingPanel({ submission: initialSubmission }: GradingPanelProp
                       y={annot.y}
                       width={annot.width}
                       height={annot.height}
+                      rects={parseRects(annot.rects)}
                       type={annot.type}
                       status={result?.status}
                       label={result ? labelByResultId.get(result.id) : null}
@@ -553,8 +572,9 @@ export function GradingPanel({ submission: initialSubmission }: GradingPanelProp
                   </blockquote>
                   {!annotations.some((a) => a.rubricResultId === selectedResult.id) && (
                     <p className="mt-1.5 text-[11px] text-muted-foreground">
-                      This quote could not be matched to a position in the document, so it has no
-                      box on the page.
+                      {latestRun?.textSource === 'ocr'
+                        ? 'This answer was transcribed from a scan, so quotes cannot be located on the page.'
+                        : 'This quote could not be matched to a position in the document, so it has no box on the page.'}
                     </p>
                   )}
                 </div>

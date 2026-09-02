@@ -34,3 +34,50 @@ describe('findEvidence', () => {
     expect(findEvidence('anything', [])).toBeNull();
   });
 });
+
+describe('a wrapped quote is drawn per line, not as one block', () => {
+  const line = (words: string[], y: number): TextItem[] =>
+    words.map((w, i) => ({ text: w, page: 1, x: 51 + i * 60, y, width: 55, height: 12 }));
+
+  const threeLines = [
+    {
+      pageNumber: 1,
+      items: [
+        ...line(['The', 'ammeter', 'measures'], 100),
+        ...line(['current', 'and', 'is'], 114),
+        ...line(['connected', 'in', 'series'], 128),
+      ],
+    },
+  ];
+
+  it('returns one rect per line of the quote', () => {
+    const located = findEvidence('The ammeter measures current and is connected in series', threeLines);
+
+    expect(located!.rects).toHaveLength(3);
+    expect(located!.rects.map((r) => r.y)).toEqual([100, 114, 128]);
+  });
+
+  it('keeps each rect to a single line height', () => {
+    const located = findEvidence('The ammeter measures current and is connected in series', threeLines);
+
+    // The union box is 40pt tall; no individual rect may be.
+    expect(located!.bbox.height).toBeGreaterThan(30);
+    expect(located!.rects.every((r) => r.height <= 14)).toBe(true);
+  });
+
+  it('leaves the gaps between lines uncovered', () => {
+    const located = findEvidence('The ammeter measures current and is connected in series', threeLines);
+
+    // This is what stops a multi-line highlight swallowing a diagram sitting between lines.
+    const covered = located!.rects.reduce((sum, r) => sum + r.height, 0);
+    const spanned = located!.bbox.height;
+    expect(covered).toBeLessThan(spanned);
+  });
+
+  it('gives a single-line quote exactly one rect matching its box', () => {
+    const located = findEvidence('The ammeter measures', threeLines);
+
+    expect(located!.rects).toHaveLength(1);
+    expect(located!.rects[0]).toEqual(located!.bbox);
+  });
+});

@@ -98,6 +98,11 @@ model GradingRun {
   model                String
   /// Which provider in the chain answered: gemini | gemma | openai
   provider             String?
+  /// 'pdf' when graded from the embedded text layer, 'ocr' when a scan had to be
+  /// transcribed by a vision model first (no evidence coordinates exist in that case).
+  textSource           String?
+  /// provider/model that transcribed the scan, when textSource is 'ocr'.
+  transcribedBy        String?
   /// True when the primary provider was unavailable and a later one graded instead.
   fallbackUsed         Boolean   @default(false)
   promptVersion        String
@@ -152,6 +157,9 @@ model Annotation {
   y      Float
   width  Float
   height Float
+  /// JSON array of per-line rects [{x,y,width,height}]. The x/y/width/height above remain
+  /// the union box, used as the drag anchor and as a fallback for rows written before this.
+  rects  String?
 
   type       String
   comment    String?

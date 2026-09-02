@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('@/lib/llm/client', () => ({ callGradingModel: vi.fn() }));
 vi.mock('@/lib/pdf/extract', () => ({ extractTextWithPositions: vi.fn() }));
+vi.mock('@/lib/llm/vision', () => ({ transcribeAnswerPdf: vi.fn() }));
 
 import { findEvidence } from '@/lib/pdf/coordinates';
 import { runPipeline, result } from '../helpers/pipeline';

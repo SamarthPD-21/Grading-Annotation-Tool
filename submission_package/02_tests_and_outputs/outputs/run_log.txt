@@ -1,0 +1,50 @@
+The evaluation set was graded in two sittings. The first run stopped after five
+scripts (the process exited without an error after TR-05), so the remaining seven were
+graded with --resume against the same already-ingested paper. Per-script results are
+written to per_submission/ as each script finishes, so nothing was lost and nothing was
+re-graded; the agreement figures at the end of the second sitting cover all twelve.
+
+Both sittings are reproduced below exactly as they were printed.
+
+================================ sitting 1 of 2 ================================
+
+GradeSense batch run — 2026-09-02T08:17:19.740Z
+chain: gemma,gemini/gemini-2.5-flash,gemini/gemini-2.0-flash,gemini/gemini-3.7-flash,groq,openrouter,openai
+
+[1/3] Ingesting question paper + marking rubric …
+[paper] rubric extracted by gemma/gemma-4-31b-it
+      paper cmtjtqxfo0000veh8cn9d057b: 3 questions, 15 rubric points, 15 marks  (80.7s)
+
+[2/3] Grading 12 scripts …
+      TR-01     15 / 15   (expected 15)   Δ +0   COMPLETED   gemma/gemma-4-31b-it   13 boxes   101.6s
+      TR-02     11 / 15   (expected 9)   Δ +2   REVIEW_REQUIRED   gemma/gemma-4-31b-it   11 boxes   122.6s
+      TR-03      2 / 15   (expected 3)   Δ -1   REVIEW_REQUIRED   gemma/gemma-4-31b-it   12 boxes   132.5s
+      TR-04      0 / 15   (expected 0)   Δ +0   REVIEW_REQUIRED   gemma/gemma-4-31b-it   2 boxes   64.6s
+      TR-05     15 / 15   (expected 13.5)   Δ +1.5   COMPLETED   gemma/gemma-4-31b-it   14 boxes   104.4s
+
+================================ sitting 2 of 2 ================================
+
+GradeSense batch run — 2026-09-02T08:30:26.851Z
+chain: gemma,gemini/gemini-2.5-flash,gemini/gemini-2.0-flash,gemini/gemini-3.7-flash,groq,openrouter,openai
+
+[1/3] Ingesting question paper + marking rubric …
+      reusing paper cmtjtqxfo0000veh8cn9d057b — no rubric call made
+      paper cmtjtqxfo0000veh8cn9d057b: 3 questions, 15 rubric points, 15 marks  (0.0s)
+
+[2/3] Grading 7 scripts …
+      (5 already on disk)
+      TE-01     14 / 15   (expected 14)   Δ +0   REVIEW_REQUIRED   gemma/gemma-4-31b-it   13 boxes   103.6s
+      TE-02   14.5 / 15   (expected 14)   Δ +0.5   REVIEW_REQUIRED   gemma/gemma-4-31b-it   13 boxes   157.4s
+      TE-03   5.25 / 15   (expected 5.5)   Δ -0.25   REVIEW_REQUIRED   gemma/gemma-4-31b-it   11 boxes   128.6s
+      TE-04      6 / 15   (expected 5)   Δ +1   REVIEW_REQUIRED   gemma/gemma-4-31b-it   9 boxes   88.7s
+      TE-05    9.5 / 15   (expected 5.5)   Δ +4   REVIEW_REQUIRED   gemma/gemma-4-31b-it   12 boxes   107.9s
+      TE-06     14 / 15   (expected 10)   Δ +4   COMPLETED   gemma/gemma-4-31b-it   15 boxes   101.0s
+      TE-07     15 / 15   (expected 12.5)   Δ +2.5   COMPLETED   gemma/gemma-4-31b-it   15 boxes   108.1s
+
+[3/3] Agreement with the human marker
+      scripts graded        : 12/12
+      mean absolute error   : 1.40 marks (out of 15)
+      within ±1.0 mark      : 7/12
+      within ±1.5 marks     : 8/12
+      evidence located      : 140/180 rubric points
+      this run's wall clock : 796.0s

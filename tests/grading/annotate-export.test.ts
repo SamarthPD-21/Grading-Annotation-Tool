@@ -5,6 +5,7 @@ import path from 'path';
 import { PDFDocument, StandardFonts } from 'pdf-lib';
 import { generateAnnotatedPdf, AnnotationItem, MarkSummary } from '@/lib/pdf/annotate';
 import { parseAnnotationPatch } from '@/services/annotation.service';
+import { extractTextWithPositions } from '@/lib/pdf/extract';
 
 let workDir: string;
 let originalPath: string;
@@ -126,19 +127,37 @@ describe('annotated PDF export', () => {
     expect(annotated.getPageCount()).toBe(2);
   });
 
-  it('regenerates on every call so edited annotations are reflected', async () => {
+  it('regenerates on every call, so a changed annotation set is reflected', async () => {
     const first = await generateAnnotatedPdf(originalPath, 'sub-edit', ANNOTATIONS, null);
     const firstSize = fs.statSync(first).size;
 
-    const edited = await generateAnnotatedPdf(
-      originalPath,
-      'sub-edit',
-      [{ ...ANNOTATIONS[0], comment: 'A much longer replacement note '.repeat(6) }],
-      null
-    );
+    const fewer = await generateAnnotatedPdf(originalPath, 'sub-edit', [ANNOTATIONS[0]], null);
 
-    expect(edited).toBe(first);
-    expect(fs.statSync(edited).size).not.toBe(firstSize);
+    expect(fewer).toBe(first);
+    expect(fs.statSync(fewer).size).not.toBe(firstSize);
+  });
+
+  it('marks the page with the rubric number only, not the note text', async () => {
+    const out = await generateAnnotatedPdf(originalPath, 'sub-marker', ANNOTATIONS, SUMMARY);
+    const extracted = await extractTextWithPositions(out);
+    const answerPages = extracted.pages.slice(0, 2).map((p) => p.text).join(' ');
+
+    // The marker ties the box back to the report...
+    expect(answerPages).toContain('1.1');
+    // ...but marker commentary must not be written over the student's own work.
+    expect(answerPages).not.toContain('Correctly identifies the closed circuit');
+    expect(answerPages).not.toContain('An ammeter must be connected in series');
+    expect(answerPages).not.toContain('Feedback:');
+    expect(answerPages).not.toContain('Correction:');
+  });
+
+  it('still carries the feedback and correction, in the report', async () => {
+    const out = await generateAnnotatedPdf(originalPath, 'sub-report-note', ANNOTATIONS, SUMMARY);
+    const extracted = await extractTextWithPositions(out);
+    const report = extracted.pages.slice(2).map((p) => p.text).join(' ');
+
+    expect(report).toContain('Correctly identifies the closed path');
+    expect(report).toContain('An ammeter must be connected in series');
   });
 
   it('survives text outside the WinAnsi range instead of throwing', async () => {
@@ -263,6 +282,41 @@ describe('the report reads like a marked script', () => {
           },
         ],
       })
+    ).resolves.toBeTruthy();
+  });
+});
+
+describe('the export draws one rect per line, matching the viewer', () => {
+  const base = ANNOTATIONS[0];
+
+  it('draws every line rect rather than a single union box', async () => {
+    const single = await generateAnnotatedPdf(originalPath, 'sub-1rect', [
+      { ...base, rects: [{ x: 72, y: 80, width: 200, height: 12 }] },
+    ], null);
+    const singleSize = fs.statSync(single).size;
+
+    const threeLines = await generateAnnotatedPdf(originalPath, 'sub-3rect', [
+      {
+        ...base,
+        rects: [
+          { x: 72, y: 80, width: 200, height: 12 },
+          { x: 72, y: 94, width: 200, height: 12 },
+          { x: 72, y: 108, width: 120, height: 12 },
+        ],
+      },
+    ], null);
+
+    // Three rectangles emit more drawing operators than one; a union box would not.
+    expect(fs.statSync(threeLines).size).toBeGreaterThan(singleSize);
+  });
+
+  it('falls back to the union box for annotations stored before rects existed', async () => {
+    await expect(
+      generateAnnotatedPdf(originalPath, 'sub-legacy', [{ ...base, rects: null }], null)
+    ).resolves.toBeTruthy();
+
+    await expect(
+      generateAnnotatedPdf(originalPath, 'sub-legacy-empty', [{ ...base, rects: [] }], null)
     ).resolves.toBeTruthy();
   });
 });

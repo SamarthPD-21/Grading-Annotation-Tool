@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 
 vi.mock('@/lib/llm/client', () => ({ callGradingModel: vi.fn() }));
 vi.mock('@/lib/pdf/extract', () => ({ extractTextWithPositions: vi.fn() }));
+vi.mock('@/lib/llm/vision', () => ({ transcribeAnswerPdf: vi.fn() }));
 vi.mock('@/lib/pdf/coordinates', () => ({ findEvidence: vi.fn(() => null) }));
 
 import { processGradingPipeline } from '@/lib/grading/grade';

@@ -1,0 +1,185 @@
+{
+  "generatedAt": "2026-09-02T08:12:55.713Z",
+  "scripts": [
+    {
+      "id": "TR-01",
+      "split": "train",
+      "file": "TR-01_full-credit.pdf",
+      "name": "Ananya Iyer",
+      "roll": "S-1042",
+      "profile": "Full credit — complete, correctly reasoned answers to all three questions.",
+      "expected": {
+        "q1": 5,
+        "q2": 5,
+        "q3": 5,
+        "total": 15
+      },
+      "tests": "Correct answer: every rubric point should be CORRECT and the total should be the paper maximum."
+    },
+    {
+      "id": "TR-02",
+      "split": "train",
+      "file": "TR-02_partial-credit.pdf",
+      "name": "Rohit Menon",
+      "roll": "S-1057",
+      "profile": "Partial credit — the core idea of each question is there, but the instrument placement, the counter-argument and the cost-shift analysis are all missing.",
+      "expected": {
+        "q1": 3,
+        "q2": 3,
+        "q3": 3,
+        "total": 9
+      },
+      "tests": "Partial answer: marks should be awarded proportionally, with the missing rubric points named rather than silently rolled into the total."
+    },
+    {
+      "id": "TR-03",
+      "split": "train",
+      "file": "TR-03_incorrect.pdf",
+      "name": "Kabir Shah",
+      "roll": "S-1063",
+      "profile": "Confidently wrong — voltmeter in series, resistance stated to increase current, equilibrium read off the wrong row, and an English answer that asserts without support.",
+      "expected": {
+        "q1": 1,
+        "q2": 1,
+        "q3": 1,
+        "total": 3
+      },
+      "tests": "Incorrect answer: near-zero marks, and every wrong statement should come back with a correction rather than only a lost mark."
+    },
+    {
+      "id": "TR-04",
+      "split": "train",
+      "file": "TR-04_blank.pdf",
+      "name": "Sana Qureshi",
+      "roll": "S-1071",
+      "profile": "Effectively blank — the script was handed in with only the headings copied out.",
+      "expected": {
+        "q1": 0,
+        "q2": 0,
+        "q3": 0,
+        "total": 0
+      },
+      "tests": "Blank answer: every rubric point should be MISSING with zero marks, and the run must not invent evidence boxes for text that is not on the page."
+    },
+    {
+      "id": "TR-05",
+      "split": "train",
+      "file": "TR-05_ocr-noise.pdf",
+      "name": "Devansh Rao",
+      "roll": "S-1080",
+      "profile": "Correct content carried through a poor scan — the same substance as TR-01, degraded with the character confusions a real OCR pass produces (rn/m, l/1, 0/O, split words).",
+      "expected": {
+        "q1": 4.5,
+        "q2": 4.5,
+        "q3": 4.5,
+        "total": 13.5
+      },
+      "tests": "OCR noise: evidence should still be located by fuzzy match, and marks should not collapse because of spelling damage."
+    },
+    {
+      "id": "TE-01",
+      "split": "test",
+      "file": "TE-01_strong-with-gap.pdf",
+      "name": "Meera Krishnan",
+      "roll": "S-2011",
+      "profile": "Strong overall, one clean gap — Q3 never explains what happens away from equilibrium, which should cost exactly one rubric point and no more.",
+      "expected": {
+        "q1": 5,
+        "q2": 5,
+        "q3": 4,
+        "total": 14
+      },
+      "tests": "A single missing rubric point must be isolated to that point, not spread across the question."
+    },
+    {
+      "id": "TE-02",
+      "split": "test",
+      "file": "TE-02_contrarian-argument.pdf",
+      "name": "Aarav Bansal",
+      "roll": "S-2019",
+      "profile": "Argues the opposite conclusion to the model answer for Q2, but argues it properly — position, development, counter-view, example, conclusion.",
+      "expected": {
+        "q1": 4,
+        "q2": 5,
+        "q3": 5,
+        "total": 14
+      },
+      "tests": "The grader must reward quality of reasoning, not similarity to the model answer. A well-argued disagreement should still score 5/5 on Q2."
+    },
+    {
+      "id": "TE-03",
+      "split": "test",
+      "file": "TE-03_padded-shallow.pdf",
+      "name": "Zoya Farooqui",
+      "roll": "S-2026",
+      "profile": "Long but empty — restates the question at length, repeats itself, and rarely commits to a testable claim.",
+      "expected": {
+        "q1": 2,
+        "q2": 2,
+        "q3": 1.5,
+        "total": 5.5
+      },
+      "tests": "Length must not be mistaken for correctness: marks should track the rubric points actually satisfied."
+    },
+    {
+      "id": "TE-04",
+      "split": "test",
+      "file": "TE-04_partially-blank.pdf",
+      "name": "Nikhil Prasad",
+      "roll": "S-2033",
+      "profile": "Ran out of time — Q2 answered properly, Q1 abandoned after two lines, Q3 not started.",
+      "expected": {
+        "q1": 1,
+        "q2": 4,
+        "q3": 0,
+        "total": 5
+      },
+      "tests": "A blank question inside an otherwise answered script must be MISSING on its own points without dragging down the answered ones."
+    },
+    {
+      "id": "TE-05",
+      "split": "test",
+      "file": "TE-05_diagram-heavy.pdf",
+      "name": "Tanvi Deshmukh",
+      "roll": "S-2040",
+      "profile": "Draws well, writes almost nothing — correct diagrams for Q1 and Q3 with only label-level text, so most explanation points are unsupported.",
+      "expected": {
+        "q1": 2.5,
+        "q2": 1,
+        "q3": 2,
+        "total": 5.5
+      },
+      "tests": "Marks that depend on an explanation should not be awarded from a correct diagram alone; the feedback should say what the writing was missing."
+    },
+    {
+      "id": "TE-06",
+      "split": "test",
+      "file": "TE-06_wrong-equilibrium.pdf",
+      "name": "Imran Sheikh",
+      "roll": "S-2048",
+      "profile": "Sound method, wrong number — reads the equilibrium off the wrong row of the schedule and then reasons correctly from that wrong value.",
+      "expected": {
+        "q1": 4,
+        "q2": 4,
+        "q3": 2,
+        "total": 10
+      },
+      "tests": "The grader has to catch a factual error inside otherwise correct reasoning, and quote the sentence that contains it."
+    },
+    {
+      "id": "TE-07",
+      "split": "test",
+      "file": "TE-07_heavy-scan-noise.pdf",
+      "name": "Preeti Nair",
+      "roll": "S-2055",
+      "profile": "Worst-case scan — correct answers under heavy character substitution, hyphenated line breaks and a stray scanner artefact line.",
+      "expected": {
+        "q1": 4,
+        "q2": 4.5,
+        "q3": 4,
+        "total": 12.5
+      },
+      "tests": "Stress case for evidence location: quotes must still be matched, and where a quote genuinely cannot be located no box should be drawn."
+    }
+  ]
+}

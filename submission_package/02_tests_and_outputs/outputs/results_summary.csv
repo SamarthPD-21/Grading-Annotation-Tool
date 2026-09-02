@@ -1,0 +1,13 @@
+id,split,student,expected_q1,awarded_q1,expected_q2,awarded_q2,expected_q3,awarded_q3,expected_total,awarded_total,max_marks,delta,status,provider,model,fallback_used,evidence_boxes
+TR-01,train,"Ananya Iyer",5,5,5,5,5,5,15,15,15,0,COMPLETED,gemma,gemma-4-31b-it,false,13
+TR-02,train,"Rohit Menon",3,4,3,4,3,3,9,11,15,2,REVIEW_REQUIRED,gemma,gemma-4-31b-it,false,11
+TR-03,train,"Kabir Shah",1,0.5,1,1.5,1,0,3,2,15,-1,REVIEW_REQUIRED,gemma,gemma-4-31b-it,false,12
+TR-04,train,"Sana Qureshi",0,0,0,0,0,0,0,0,15,0,REVIEW_REQUIRED,gemma,gemma-4-31b-it,false,2
+TR-05,train,"Devansh Rao",4.5,5,4.5,5,4.5,5,13.5,15,15,1.5,COMPLETED,gemma,gemma-4-31b-it,false,14
+TE-01,test,"Meera Krishnan",5,5,5,5,4,4,14,14,15,0,REVIEW_REQUIRED,gemma,gemma-4-31b-it,false,13
+TE-02,test,"Aarav Bansal",4,4.5,5,5,5,5,14,14.5,15,0.5,REVIEW_REQUIRED,gemma,gemma-4-31b-it,false,13
+TE-03,test,"Zoya Farooqui",2,1.5,2,2,1.5,1.75,5.5,5.25,15,-0.25,REVIEW_REQUIRED,gemma,gemma-4-31b-it,false,11
+TE-04,test,"Nikhil Prasad",1,1,4,5,0,0,5,6,15,1,REVIEW_REQUIRED,gemma,gemma-4-31b-it,false,9
+TE-05,test,"Tanvi Deshmukh",2.5,4.5,1,1.5,2,3.5,5.5,9.5,15,4,REVIEW_REQUIRED,gemma,gemma-4-31b-it,false,12
+TE-06,test,"Imran Sheikh",4,5,4,5,2,4,10,14,15,4,COMPLETED,gemma,gemma-4-31b-it,false,15
+TE-07,test,"Preeti Nair",4,5,4.5,5,4,5,12.5,15,15,2.5,COMPLETED,gemma,gemma-4-31b-it,false,15
